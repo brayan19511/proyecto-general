@@ -1,0 +1,12 @@
+# Contexto de build = raíz del repositorio. Nada de secretos ni entornos locales.
+**/.env
+**/secrets/
+**/enviroment/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+**/.pytest_cache/
+**/test-output/
+.git
+docs

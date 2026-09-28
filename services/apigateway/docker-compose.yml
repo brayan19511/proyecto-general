@@ -1,0 +1,116 @@
+# Entorno local completo: PostgreSQL, pgAdmin, auth y la API central.
+#
+#   docker compose up -d --build          (desde services/apigateway)
+#
+# Variables: .env de esta carpeta (DB_*, PGADMIN_*, puertos e imágenes).
+# Cada aplicación lee además su propio .env, montado de solo lectura; los
+# valores de "environment" tienen prioridad y ajustan lo que cambia dentro de Docker.
+#
+# Redes:
+#   edge       la central publica su puerto aquí (solo 127.0.0.1).
+#   auth-net   exclusiva de la central y auth, subred fija: auth confía en ella
+#              (TRUSTED_PROXIES). Sin salida a internet ni acceso desde fuera.
+#   data       la base; auth y la central escriben aquí (auth y logs).
+
+# Mismo nombre de proyecto que el Compose anterior (carpeta proyecto-central):
+# reutiliza los contenedores y el volumen existentes en lugar de crear otros.
+name: proyecto-central
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER} -d ${DB_NAME}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgadmin:
+    image: dpage/pgadmin4:7.7
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT}:80"
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  auth:
+    # Versión fija de la imagen; cambiarla aquí (o con AUTH_IMAGE en .env).
+    image: ${AUTH_IMAGE:-auth:0.1.0}
+    build:
+      context: ../..                      # raíz del repo (incluye packages/)
+      dockerfile: services/auth/Dockerfile
+    # Sin "ports": solo la central llega a auth.
+    volumes:
+      - ../auth/.env:/app/services/auth/.env:ro
+      - ../auth/secrets:/app/services/auth/secrets:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"                     # puerto interno de PostgreSQL, no el publicado
+      # Rutas absolutas dentro del contenedor (las del .env son relativas).
+      JWT_PRIVATE_KEY_FILE: /app/services/auth/secrets/jwt_private.pem
+      JWT_PUBLIC_KEY_FILE: /app/services/auth/secrets/jwt_public.pem
+      # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por auth-net.
+      TRUSTED_PROXIES: '["172.30.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+        # Nombre que solo existe en auth-net: la central lo usa en AUTH_URL,
+        # así su conexión sale siempre desde su IP de auth-net (confiable) y no
+        # desde la red data, que auth no reconoce como proxy.
+        aliases: [auth.internal]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  apigateway:
+    image: ${APIGATEWAY_IMAGE:-apigateway:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/apigateway/Dockerfile
+    # Solo accesible desde esta máquina. GATEWAY_PORT en .env si 8001 está ocupado.
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8001}:8000"
+    volumes:
+      - ./.env:/app/services/apigateway/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000
+    networks: [edge, data, auth-net]
+    # No depende de auth: arranca y está "ready" aunque auth no esté (responde
+    # 502 solo en /auth/*).
+    depends_on:
+      db:
+        condition: service_healthy
+
+networks:
+  edge:
+  data:
+  auth-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  db:
+    name: db

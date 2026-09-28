@@ -1,0 +1,21 @@
+[project]
+name = "platform-audit"
+version = "0.2.0"
+description = "Seguimiento propio (logs) común a los servicios de la plataforma: schema audit, middleware y pasos."
+requires-python = ">=3.12"
+dependencies = [
+    "SQLAlchemy>=2.0.40,<2.1",
+    "alembic>=1.16,<2",
+    "starlette>=0.40",
+    "anyio>=4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+platform_audit = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]

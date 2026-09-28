@@ -1,0 +1,12 @@
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic-settings==2.15.0
+# Validación de EmailStr (registro, login, miembros). Faltaba declararla.
+email-validator>=2.2,<3
+SQLAlchemy>=2.0.40,<2.1
+psycopg[binary]>=3.2,<4
+alembic>=1.16,<2
+pwdlib[argon2]>=0.3,<1
+PyJWT[crypto]>=2.10,<3
+# Paquete compartido de logs (schema audit). Ruta relativa: ejecutar pip desde services/auth.
+-e ../../packages/platform-audit
