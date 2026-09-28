@@ -3,6 +3,8 @@ uvicorn==0.53.0
 pydantic-settings==2.15.0
 SQLAlchemy>=2.0.40,<2.1
 psycopg[binary]>=3.2,<4
+# Migraciones del schema gateway (tablas propias de la central).
+alembic>=1.16,<2
 # Cliente HTTP hacia los servicios (reenvío): timeouts explícitos, sin reintentos.
 httpx>=0.28,<1
 # Paquete compartido de logs (schema audit). Ruta relativa: ejecutar pip desde la carpeta del servicio.

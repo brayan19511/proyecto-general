@@ -6,7 +6,7 @@ El usuario escribe el código. El asistente explica, revisa y propone un paso pe
 
 ## Estado real
 
-services/auth es funcional: registro, login con JWT RS256 y refresh rotativo, sesiones, seed idempotente, empresas, áreas, puestos, roles, permisos con alcance, miembros, API keys, documentos de identidad, historial y logs (schema `audit`, vía packages/platform-audit). Ver [services/auth/readme.md](services/auth/readme.md). Tiene health/ready y Dockerfile; faltan pruebas automatizadas y despliegue. services/apigateway (API central) tiene configuración, health/ready y logs; el reenvío a auth está pendiente. Su carpeta también contiene el Compose local de PostgreSQL y pgAdmin. services/base es la plantilla para nuevos servicios FastAPI. Las reglas de negocio descritas son objetivos, no capacidades ya disponibles.
+services/auth es funcional: registro, login con JWT RS256 y refresh rotativo, sesiones, seed idempotente, empresas, áreas, puestos, roles, permisos con alcance, miembros, API keys, documentos de identidad, historial y logs (schema `audit`, vía packages/platform-audit). Ver [services/auth/readme.md](services/auth/readme.md). Tiene health/ready y Dockerfile; faltan pruebas automatizadas y despliegue. services/apigateway (API central) tiene configuración, health/ready, logs, reenvío a auth (timeout, sin reintentos, IP real y trace_id) `AUTH_ENABLED`, estado de servicios en su schema `gateway` (sin reinicio, releído cada 5 s, con historial) y administración para el administrador de plataforma (`/gateway/admin/...`, validado con `GET /auth/me`). Su carpeta contiene el Compose local (PostgreSQL, pgAdmin, auth y la central). Lista negra de IPs/rangos con vencimiento opcional (`gateway.ip_blocks`, 403 antes de enrutar). Pendiente: límites por IP en la central. Se prevé una aplicación web React de administración que consumirá todo a través de la central. services/base es la plantilla para nuevos servicios FastAPI. Las reglas de negocio descritas son objetivos, no capacidades ya disponibles.
 
 general.txt es un antecedente descartado.
 
@@ -16,9 +16,11 @@ general.txt es un antecedente descartado.
 - [Auth](services/auth/readme.md)
 - [platform-audit: logs compartidos (schema audit)](packages/platform-audit/README.md)
 - [Plan de seguimiento propio (logs)](docs/plan-observabilidad.md)
+- [API central](services/apigateway/readme.md) y [módulos y administración](services/apigateway/docs/modulos-y-administracion.md)
 - [Guía y explicación del código](services/auth/docs/desarrollo-guiado.md)
 - [Requisitos de auth](services/auth/docs/requisitos.md)
 - [Modelo de datos](services/auth/docs/modelo-datos.md)
+- [Libro mayor / gastos (base técnica, sin negocio)](services/libro-mayor/readme.md)
 - [Instrucciones de colaboración](AGENTS.md)
 
 ## Dirección acordada

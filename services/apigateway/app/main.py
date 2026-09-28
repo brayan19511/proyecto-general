@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
@@ -5,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from platform_audit import AuditConfig, AuditMiddleware
 
-from app.api.routes import auth_proxy, health_router
+from app.api.routes import auth_proxy, health_router, ip_blocks_router, logs_router, services_router
 from app.clients.auth_client import auth_client
+from app.core.ip_block_middleware import IpBlockMiddleware
+from app.core.refresh import refresh_loop
 from app.core.audit import SENSITIVE_KEY_PARTS, SENSITIVE_KEYS
 from app.core.config import settings
 from app.core.db.connection import engine
@@ -19,7 +22,10 @@ PREFIX = ""
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Relee en segundo plano el estado de los servicios y la lista negra (app/core/refresh.py).
+    refresh = asyncio.create_task(refresh_loop())
     yield
+    refresh.cancel()
     # Al apagar: cierra las conexiones abiertas hacia los servicios.
     if auth_client is not None:
         await auth_client.aclose()
@@ -32,6 +38,11 @@ app = FastAPI(
     redoc_url=f"{PREFIX}/redoc",
     openapi_url=f"{PREFIX}/openapi.json",
 )
+
+# Orden: el último agregado queda por fuera. Así: Audit → CORS → lista negra → rutas.
+# El bloqueo queda en los logs (con la IP) y el navegador puede leer el 403.
+if settings.IP_BLOCKS_ENABLED:
+    app.add_middleware(IpBlockMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,6 +79,10 @@ app.add_middleware(
 
 api = APIRouter(prefix=PREFIX)
 api.include_router(health_router.router)
+# Administración de la central (/gateway/admin/...): solo administrador de plataforma.
+api.include_router(logs_router.router)
+api.include_router(services_router.router)
+api.include_router(ip_blocks_router.router)
 # Reenvío a auth: solo las rutas de auth_proxy.PUBLIC_ROUTES.
 api.include_router(auth_proxy.router)
 

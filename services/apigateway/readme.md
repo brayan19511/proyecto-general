@@ -8,6 +8,15 @@ servicios y coordinación. Python + FastAPI, creado desde `services/base`.
 - Paso 1 (hecho): configuración, `GET /health`, `GET /ready` y logs (schema `audit`, `service=apigateway`).
 - Paso 2 (hecho): reenvío a auth (`app/api/routes/auth_proxy.py`).
 - Paso 3 (hecho): `TRUSTED_PROXIES` con IPs o rangos CIDR (auth y `platform-audit`).
+- Compose (hecho): db, pgAdmin, auth y la central, con red exclusiva central–auth.
+- Módulos, etapa 1 (hecho): `AUTH_ENABLED` por configuración.
+- Administración (hecho): validación de administrador vía `GET /auth/me` y
+  `GET /gateway/admin/logs[/{id}]`.
+- Módulos, etapa 2 (hecho): estado de servicios en base (schema `gateway`,
+  Alembic, historial), releído cada 5 s. Auth solo por configuración.
+- Lista negra de IPs (hecho): `gateway.ip_blocks`, 403 antes de enrutar, releída cada 5 s.
+- Siguiente: límites por IP (rate limit) y la aplicación web de administración.
+  Ver [docs/modulos-y-administracion.md](docs/modulos-y-administracion.md).
 
 Rutas propias en la raíz (sin prefijo): `/health`, `/ready`, `/docs`.
 `/ready` solo revisa dependencias propias de la central (la base de logs); no
@@ -20,6 +29,7 @@ consulta a auth: si auth cae, la central sigue lista y responde error solo en `/
 | Rutas publicadas | `PUBLIC_ROUTES` en `auth_proxy.py`: (prefijo, métodos). Lo que no está responde 404 sin llegar a auth. Paths con `.` o `..` se rechazan |
 | Dejar de publicar algo | Borrar/comentar su línea o quitar un método, y redesplegar. Para ser más fino: una línea más específica en lugar de la general |
 | Path | Sin reescribir: `/auth/login` en la central = `/auth/login` en auth |
+| Habilitado | `AUTH_ENABLED` (true). `false`: rutas publicadas responden 503 sin llegar a auth; auth sigue corriendo. Aplicar con `docker compose restart apigateway` |
 | Timeout | `AUTH_TIMEOUT_SECONDS` (30). Agotado: 504. Auth caída: 502. Mensajes genéricos |
 | Reintentos | Ninguno: una mutación podría haberse aplicado |
 | Headers hacia auth | Lista positiva: Content-Type, Accept, Authorization, X-Company-Id, X-API-Key, X-Seed-Token, User-Agent |
@@ -71,6 +81,28 @@ incluye los campos extra que oculta auth. Al publicar otro servicio, agregar los
   auth también es alcanzable, pero sin confianza (la traza y la IP se ignoran).
 - Confiar en un rango confía en todo contenedor de esa red: no agregar otros servicios a `auth-net`.
 
+## Administración (`/gateway/admin/...`)
+
+Solo para el administrador de plataforma. La central valida el Bearer
+preguntando a auth (`GET /auth/me`, exige `is_platform_admin=true`); ver
+`app/api/dependencies.py`. Probar: `POST /auth/login` en http://localhost:8001/auth/docs,
+copiar el `access_token`, "Authorize" en http://localhost:8001/docs y llamar a
+`GET /gateway/admin/logs`.
+
+| Ruta | Qué devuelve |
+| --- | --- |
+| `GET /gateway/admin/logs` | Cabeceras de la central, más recientes primero. Filtros: `trace_id`, `user_id`, `outcome`, `path_prefix`, `limit`, `offset` |
+| `GET /gateway/admin/logs/{id}` | Cabecera + detalles (request, response, errores) + pasos |
+| `GET /gateway/admin/services` | Estado de cada servicio publicado (efectivo, configuración, base) |
+| `PATCH /gateway/admin/services/{service}` | Habilitar/deshabilitar desde el panel (auth: 409, solo por configuración) |
+| `GET /gateway/admin/history` | Historial de cambios de la central (`resource_type`: `service_state`, `ip_block`) |
+| `GET / POST /gateway/admin/ip-blocks`, `DELETE /gateway/admin/ip-blocks/{id}` | Lista negra: listar, bloquear IP o rango (con vencimiento opcional), desbloquear (baja lógica) |
+
+Si un bloqueo deja fuera a quien no debía: `IP_BLOCKS_ENABLED=false` en el `.env`
+y `docker compose restart apigateway`. La API ya impide bloquear tu propia IP.
+
+Los de auth siguen en `/auth/admin/logs`; se relacionan por `trace_id`.
+
 ## Configuración
 
 Un `.env` en esta carpeta sirve al Compose (db, pgAdmin, auth, central) y a la
@@ -84,6 +116,7 @@ Desde esta carpeta y con un entorno virtual activado (auth en el puerto 8000, la
 
 ```powershell
 python -m pip install -r requirements.txt
+python -m alembic upgrade head
 python scripts/migrate_audit.py
 python -m uvicorn app.main:app --reload --port 8001 --no-proxy-headers
 ```
@@ -106,7 +139,7 @@ docker compose logs -f apigateway auth
 - Nombre de proyecto `proyecto-central`: reutiliza el contenedor y el volumen `db` existentes.
 - Migraciones: paso aparte, no se ejecutan al arrancar (idempotentes):
   `docker compose run --rm auth sh -c "python -m alembic upgrade head && python scripts/migrate_audit.py"`
-  y `docker compose run --rm apigateway python scripts/migrate_audit.py`.
+  y `docker compose run --rm apigateway sh -c "python -m alembic upgrade head && python scripts/migrate_audit.py"`.
 - Versiones de imagen: `AUTH_IMAGE` y `APIGATEWAY_IMAGE` en `.env` (default `auth:0.1.0`, `apigateway:0.1.0`).
 - `docker compose down` detiene todo; los datos siguen en el volumen `db`.
 

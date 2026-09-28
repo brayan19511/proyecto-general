@@ -8,8 +8,9 @@
 # No incluye secretos: el .env se entrega al ejecutar (variables de entorno o
 # un archivo montado de solo lectura).
 #
-# La central no tiene tablas propias ni Alembic: solo usa el schema audit
-# (scripts/migrate_audit.py). Sus rutas van en la raíz, sin prefijo.
+# Tablas propias en el schema gateway (Alembic, migrations/) y logs en el schema
+# audit (scripts/migrate_audit.py). Migraciones: paso aparte, no al arrancar.
+# Sus rutas van en la raíz, sin prefijo.
 
 # Python 3.14: uuid.uuid7 está en la biblioteca estándar.
 FROM python:3.14-slim
@@ -30,6 +31,8 @@ RUN pip install -r requirements.txt
 
 # 2. Código del servicio.
 COPY services/apigateway/app ./app
+COPY services/apigateway/migrations ./migrations
+COPY services/apigateway/alembic.ini ./alembic.ini
 COPY services/apigateway/scripts ./scripts
 
 # Usuario sin privilegios: el proceso no corre como root.

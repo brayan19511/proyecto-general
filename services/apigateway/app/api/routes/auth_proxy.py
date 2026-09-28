@@ -14,10 +14,10 @@ central (su TRUSTED_PROXIES).
 import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
-from platform_audit.context import current_operation
 
 from app.clients.auth_client import auth_client
-from app.core.client_ip import forwarded_for
+from app.core import services
+from app.core.tracing import upstream_headers
 
 router = APIRouter(tags=["auth"])
 
@@ -81,15 +81,11 @@ async def proxy_to_auth(request: Request) -> Response:
     path = request.url.path
     if not is_public(request.method, path):
         return JSONResponse({"detail": "Not Found"}, status_code=404)
-    if auth_client is None:  # AUTH_ENABLED=false
+    if not services.is_enabled("auth") or auth_client is None:  # AUTH_ENABLED=false
         return JSONResponse({"detail": "El servicio auth está deshabilitado."}, status_code=503)
 
     headers = {name: value for name in REQUEST_HEADERS if (value := request.headers.get(name)) is not None}
-    headers["x-forwarded-for"] = forwarded_for(request)
-    operation = current_operation()  # None si los logs están apagados.
-    if operation is not None:
-        headers["x-trace-id"] = operation.trace_id
-        headers["x-parent-operation-id"] = operation.log_id
+    headers |= upstream_headers(request)
 
     try:
         upstream = await auth_client.request(

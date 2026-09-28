@@ -1,5 +1,5 @@
 """Aplica las migraciones del schema audit (paquete platform_audit) con la
-misma conexión de la central. La central no tiene tablas propias:
+misma conexión de la central. Ejecutar después de `alembic upgrade head`:
 
     python scripts/migrate_audit.py
 

@@ -1,0 +1,314 @@
+# Servicio libro-mayor (gastos contables)
+
+Estado: **administración (CRUD) de compañía SAP y cuentas, y sincronización
+desde SAP manual y programada con delta (fases A, B y C)**, pendiente de
+probar contra HANA real. Hay configuración, conexión PostgreSQL,
+logs (`packages/platform-audit`) con consulta para el administrador,
+health/ready, Dockerfile, Alembic (schema `libro_mayor`), actores, historial de
+cambios, identidad y permisos vía auth, rutas de compañía SAP y cuentas, seed,
+conexión HANA de solo lectura, lector de la vista (`app/sap/`), líneas del
+libro mayor, ejecuciones de sincronización y worker con horario y delta.
+Faltan reglas, filtro por áreas y consultas. Lo demás descrito en `docs/` son objetivos.
+
+## Propósito
+
+Traer desde SAP Business One (HANA) las líneas del libro mayor de las cuentas
+registradas, clasificarlas con reglas administrables y ofrecer consultas de
+gastos limitadas a las áreas que cada usuario tiene autorizadas. Primera
+empresa prevista: RadioShack (Perú); otro país comparte el mismo servidor HANA
+con otra base/schema de compañía.
+
+## Ejecutar en local
+
+Desde `services/libro-mayor`, con un entorno virtual propio:
+
+```powershell
+py -3.14 -m venv enviroment   # Python 3.14, igual que el Dockerfile (uuid7)
+.\enviroment\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env   # completar DB_NAME, DB_USER, DB_PASSWORD y AUTH_URL
+.\enviroment\Scripts\python.exe -m alembic upgrade head
+.\enviroment\Scripts\python.exe scripts/migrate_audit.py
+.\enviroment\Scripts\python.exe -m uvicorn app.main:app --reload --port 8003
+```
+
+- `http://localhost:8003/libro-mayor/health` → `{"status": "ok"}` (proceso vivo).
+- `http://localhost:8003/libro-mayor/ready` → 200 si la base responde; 503 si no.
+- Documentación: `http://localhost:8003/libro-mayor/docs`.
+
+El puerto 8003 es solo un ejemplo local (8002 lo usa la central en el
+Compose); en Docker el servicio escucha en 8000. `AUTH_URL` debe apuntar a un
+auth alcanzable desde donde corre el servicio.
+
+Imagen (desde la raíz del repositorio):
+
+```powershell
+docker build -f services/libro-mayor/Dockerfile -t libro-mayor:0.1.0 .
+```
+
+## Rutas
+
+Todas bajo `/libro-mayor`. Las de empresa exigen `Authorization: Bearer` y
+`X-Company-Id`.
+
+| Ruta | Quién | Qué hace |
+| --- | --- | --- |
+| `GET /admin/sap-company` | Admin de plataforma | Compañía SAP activa de la empresa (404 si no hay) |
+| `POST /admin/sap-company` | Admin de plataforma | Configura `sap_schema`, `source_view`, `sync_start_date`. 409 si ya hay una activa o si el schema es de otra empresa; 422 si no es un identificador válido |
+| `PATCH /admin/sap-company` | Admin de plataforma | Cambia solo lo enviado. `source_view` y `sync_start_date` siempre; `sap_schema` solo si la empresa no tiene líneas (409) |
+| `DELETE /admin/sap-company` | Admin de plataforma | Baja lógica |
+| `GET /accounts` | `ledger.accounts.manage` (company) | Cuentas activas (`include_inactive=true` para ver bajas); paginado |
+| `POST /accounts` | `ledger.accounts.manage` (company) | Alta `{code, match_mode, name?}`. 409 si se superpone o si la empresa no tiene compañía SAP; 422 si el código no es numérico |
+| `GET /accounts/{id}` | `ledger.accounts.manage` (company) | Una cuenta, activa o dada de baja |
+| `PATCH /accounts/{id}` | `ledger.accounts.manage` (company) | Cambia solo lo enviado. `name` siempre; `code`/`match_mode` solo si la cuenta no tiene líneas ni sincronización abierta (409: dar de baja y registrar otra); 409 si se superpone |
+| `DELETE /accounts/{id}` | `ledger.accounts.manage` (company) | Baja lógica; deja de sincronizarse, se conservan sus líneas |
+| `POST /sync-runs` | `ledger.sync` (company) | `{account_id, date_from, date_to}` → 202 con la ejecución `pending`. 409 si la cuenta ya tiene una abierta o falta SAP; 422 si el rango es inválido, futuro o supera `SYNC_MAX_DAYS` |
+| `GET /sync-runs` | `ledger.sync` (company) | Ejecuciones (filtros `account_id`, `status`), más recientes primero |
+| `GET /sync-runs/{id}` | `ledger.sync` (company) | Estado y avance: `days_done`/`days_total`, filas leídas, nuevas y actualizadas, `safe_error` |
+| `POST /admin/seed` | Admin de plataforma | Carga inicial de la empresa (solo con `SEED_ENABLED=true`; si no, 404). Ver "Seed" |
+| `GET /admin/logs` | Admin de plataforma (sin `X-Company-Id`) | Logs propios (filtros `trace_id`, `user_id`, `outcome`, `path_prefix`) |
+| `GET /admin/logs/{id}` | Admin de plataforma | Log con sus detalles y pasos |
+
+El body no acepta campos no declarados (`created_by`, `company_id`, …): 422.
+En PATCH, `null` solo se acepta en `name` (borra el nombre).
+
+Por qué algunos campos no se editan con datos ya sincronizados: las líneas
+traídas pertenecen a la cuenta (`code` + `match_mode`) y a la compañía SAP
+(`sap_schema`) que las trajeron. Cambiarlos dejaría líneas que ya no
+corresponden a su configuración; en ese caso se da de baja y se registra otra.
+
+## Identidad y permisos
+
+`app/api/dependencies.py`. libro-mayor no valida tokens: pregunta a auth
+reenviando el Bearer, igual que la central.
+
+1. `GET /auth/me` → id del usuario y si es administrador de plataforma.
+2. `GET /auth/me/permissions` con `X-Company-Id` → empresa validada y permisos
+   con alcance. Auth responde 403 si no pertenece a la empresa.
+
+Una sesión revocada o una membresía dada de baja pierde acceso de inmediato.
+Coste: dos llamadas a auth por solicitud de empresa (se puede reducir a una si
+auth agrega el id de usuario a `/me/permissions`). Sin reintentos; auth caído
+→ 502, lento → 504. Por ahora solo Bearer, no `X-API-Key`.
+
+**Pendiente en auth:** los permisos `ledger.accounts.manage` y `ledger.sync`
+(alcance `company`) no existen todavía en su catálogo
+(`services/auth/app/core/permissions.py`). Hasta agregarlos y asignarlos a un
+rol, solo el administrador de plataforma gestiona cuentas y sincronizaciones.
+
+## Seed
+
+`POST /libro-mayor/admin/seed` con Bearer de administrador de plataforma y
+`X-Company-Id`. Carga la compañía SAP y las cuentas de `app/seeds/data.py`
+para el código de esa empresa en auth (hoy `RASH`: 95 y 97 por prefijo y dos
+cuentas 701110… exactas; los datos los define el usuario en `data.py`).
+
+- Solo existe con `SEED_ENABLED=true`: activarlo, ejecutarlo y volver a `false`.
+- No usa token de bootstrap como auth: el administrador ya existe y se
+  autentica con su sesión. Cada alta queda en `change_history` a su nombre.
+- Idempotente y en una transacción: lo que existe igual se deja
+  (`existing`), lo dado de baja no se reactiva (`kept_deactivated`), y un
+  conflicto (otra compañía SAP activa, misma cuenta con otro modo,
+  superposición) responde 409 sin guardar nada.
+- Para agregar cuentas: editar `data.py` y volver a ejecutar, o `POST /accounts`.
+
+## SAP HANA
+
+Solo lectura. `app/sap/connection.py` crea el engine la primera vez que se usa;
+sin `SAP_HOST` el servicio arranca igual y lo que necesite SAP responde 409.
+`app/sap/ledger_reader.py` contiene todo el SQL hacia SAP:
+
+- Columnas explícitas de la vista (`SAP_COLUMNS`, contrato tomado de
+  proyecto-05), nunca `SELECT *`. No pide `usuario_id` ni `autor`.
+- Schema y vista validados (letras, dígitos, `_`) y entre comillas; cuentas y
+  fechas siempre como parámetros.
+- Las cuentas se traducen a `"cuenta_asociada" = :a0` (exacta) o
+  `LIKE :a1` con `95%` (prefijo).
+
+Probar la conexión y el contrato de la vista (no escribe nada):
+
+```powershell
+.\enviroment\Scripts\python.exe scripts/check_sap.py --schema SBO_RASH_PRODUCCION --view VW_LIBRO_MAYOR_PERSONALIZADO_2
+.\enviroment\Scripts\python.exe scripts/check_sap.py --schema SBO_RASH_PRODUCCION --view VW_LIBRO_MAYOR_PERSONALIZADO_2 --account 95 --mode prefix --date 2026-09-01
+```
+
+Muestra columnas faltantes o extra frente al contrato, cuántas líneas hay ese
+día, el tipo Python de cada columna y si hay claves (`transaccion_id`,
+`linea`) repetidas.
+
+**Aviso Windows:** el driver `hdbcli` para Windows se cierra con *segmentation
+fault* cuando **no logra conectar** (probado con Python 3.13/hdbcli 2.28, el
+entorno de proyecto-05, y 3.14/2.30). En Linux (imagen Docker) el mismo caso da
+un error normal. Si en Windows el script se cierra sin mensaje, revisar host,
+puerto, VPN o firewall, o ejecutarlo dentro del contenedor.
+
+## Sincronización
+
+1. `POST /sync-runs` valida y registra la ejecución `pending`. No consulta SAP:
+   el trabajo pesado nunca corre dentro de la solicitud HTTP.
+2. El worker la toma, consulta SAP **día por día** y guarda cada día (líneas +
+   avance) en una transacción. Un fallo deja registrado hasta qué día llegó
+   y la ejecución queda `failed` con un `safe_error`.
+3. Upsert por la clave SAP (`company_id`, `transaccion_id`, `linea`): nueva →
+   se inserta; existente y cambiada en SAP → se actualiza; igual → no se toca.
+   Repetir un rango no duplica. Consulta las existentes y actualiza con el ORM
+   (portable; sin `ON CONFLICT` ni `MERGE`).
+4. Las líneas se guardan tal como vienen (textos, signos, centros vacíos) y sin
+   clasificar (`rule_id` llegará con el motor de reglas).
+5. Si SAP devuelve un dato que no cumple el contrato (clave o importe vacío,
+   fecha inválida, texto más largo que la columna, claves repetidas), la
+   ejecución falla con un mensaje claro; no se recorta ni se corrige nada.
+
+Una cuenta no puede tener dos ejecuciones pendientes o en curso (índice único
+filtrado). Una ejecución `running` sin avance en `SYNC_STALE_MINUTES` se marca
+`failed` como interrumpida; se reintenta creando otra.
+
+### Tipos de ejecución
+
+| `kind` | Quién la crea | Qué lee de SAP |
+| --- | --- | --- |
+| `sync` | `POST /sync-runs` | Rango de fechas de contabilización, día por día |
+| `initial` | Horario, si la cuenta nunca completó un `initial` o `delta` | Desde `sap_companies.sync_start_date` hasta hoy, día por día |
+| `delta` | Horario, las siguientes veces | Líneas creadas o actualizadas en SAP desde la marca de agua, en una consulta |
+
+**Marca de agua** de una cuenta: el `date_to` (día SAP en que se creó) del
+último `initial` o `delta` correcto. El siguiente delta relee **desde ese día
+inclusive**: si SAP solo guarda la fecha (sin hora) de actualización, releer
+el día evita perder cambios hechos después de la lectura anterior; el upsert
+no duplica. Un `sync` manual no mueve la marca de agua (solo cubre su rango).
+Un delta fallido tampoco: el siguiente turno vuelve a leer desde el mismo día.
+
+### Horario
+
+`SYNC_SCHEDULE` (default `06:00,10:00,14:00,18:00`) en `SAP_TIMEZONE`
+(default `America/Lima`); **ambos por confirmar**. En cada vuelta el worker
+calcula el último turno que ya pasó y crea, si falta, una ejecución por
+cuenta activa (de empresas con compañía SAP activa) para ese turno:
+
+- Si la cuenta tiene una ejecución abierta (p. ej. una manual), espera y la
+  crea para el mismo turno cuando termine.
+- Un índice único (`account_id`, `schedule_slot`) impide duplicarla si hay
+  varios workers.
+- Si el worker estuvo apagado varios turnos, al volver crea solo la del último:
+  el delta recupera todos los cambios desde la marca de agua.
+- `SYNC_SCHEDULE=off` desactiva el horario (solo manuales). Vacío no lo
+  desactiva: una variable vacía usa el default.
+- Las ejecuciones del horario se atribuyen al actor `libro-mayor.scheduler`
+  (`origin=schedule`).
+
+### Worker
+
+Proceso separado de la API, misma imagen:
+
+```powershell
+.\enviroment\Scripts\python.exe -m app.worker          # queda corriendo
+.\enviroment\Scripts\python.exe -m app.worker --once   # procesa las pendientes y termina
+```
+
+En Docker: `docker run ... libro-mayor:0.1.0 python -m app.worker` (el `CMD`
+por defecto sigue siendo la API). Pueden correr varios: cada uno toma una
+ejecución distinta (`SKIP LOCKED`). Con SIGTERM/Ctrl+C termina la ejecución en
+curso y sale. Escribe en la salida estándar solo mensajes seguros: de un
+error guarda el tipo y el código del driver, nunca el texto crudo (puede
+traer datos). Las líneas y el estado de las ejecuciones se atribuyen al actor
+de sistema `libro-mayor.worker`; quién pidió la ejecución queda en su
+`created_by` y cada línea apunta a su última ejecución (`last_sync_run_id`).
+
+## Logs
+
+- Cada solicitud queda en `audit.logs` con el usuario y la empresa validados
+  (`set_actor` en las dependencias).
+- Los servicios registran pasos (`account.create`, `account.delete`,
+  `sap_company.create`, `sap_company.delete`) en `audit.logs_steps`.
+- Las llamadas a auth llevan `X-Trace-Id` y `X-Parent-Operation-Id`: si auth
+  tiene a libro-mayor en su `TRUSTED_PROXIES`, sus logs quedan enlazados.
+- `scripts/migrate_audit.py` crea o actualiza el schema `audit` (idempotente).
+
+## Historial de cambios
+
+`libro_mayor.change_history`, de solo anexado: una fila por alta o baja de
+compañía SAP o cuenta, con `action`, recurso, empresa, `trace_id`, actor,
+fecha y `before`/`after` (solo campos permitidos). Se guarda en la misma
+transacción que el cambio. El ORM impide editar o borrar eventos (no protege
+contra SQL directo).
+
+## Actores y AuditMixin
+
+`app/models/common/mixin_model.py`: mismos campos comunes que la plantilla
+(`id`, `created_*`, `updated_*`, `is_active`, `deleted_*`), con FK a
+`libro_mayor.actors` en lugar de `users` de auth.
+
+- `created_by`/`updated_by` obligatorios; `deleted_by` solo en bajas.
+- En el alta, `updated_at`/`updated_by` = `created_at`/`created_by`. Al
+  actualizar, el código los asigna (no hay `onupdate` automático).
+- `actors`: `kind` (`user` | `system` | `service`), `subject_ref` (id de
+  usuario de auth o nombre del proceso, p. ej. `libro-mayor.scheduler`).
+- `app/services/actors.py` registra el actor la primera vez que opera, en la
+  misma transacción del cambio, y se atribuye su propia alta. Sin seed.
+
+## Migraciones (Alembic)
+
+Schema `libro_mayor`, declarado una vez en `app/models/entities.py`. Alembic
+crea el schema si no existe, guarda su versión en
+`libro_mayor.alembic_version`, solo compara este schema y sus tablas, y tiene
+`downgrade` deshabilitado (un error se corrige con otra migración).
+`alembic.ini` no tiene URL: usa el `.env`.
+
+| Revisión | Contenido |
+| --- | --- |
+| `605d4653b27d` actores | `actors` |
+| `8b83c4465b06` companias sap y cuentas | `sap_companies`, `accounts`; únicos solo entre filas activas |
+| `d96307b64e1a` historial de cambios | `change_history` |
+| `a5f6bc046f7c` sincronizaciones y lineas | `sync_runs` (una abierta por cuenta) y `ledger_lines` (única por clave SAP) |
+| `d608ca9bd49a` horario y delta | `sync_runs.schedule_slot` (única por cuenta y turno) y tipos `initial`/`delta`. El cambio del CHECK se escribió a mano: autogenerate no detecta cambios en CHECK |
+
+```powershell
+.\enviroment\Scripts\python.exe -m alembic current
+.\enviroment\Scripts\python.exe -m alembic revision --autogenerate -m "mensaje"
+# Revisar el archivo generado en migrations/versions antes de aplicarlo.
+.\enviroment\Scripts\python.exe -m alembic upgrade head
+```
+
+Cada archivo nuevo de modelos se importa en `app/models/__init__.py`.
+
+## Configuración
+
+| Variable | Para qué | Default | Cuándo cambiarla |
+| --- | --- | --- | --- |
+| `PROJECT_NAME` | Título en `/docs` | `Libro mayor` | Opcional |
+| `SERVICE_NAME` / `SERVICE_VERSION` | Identifican al servicio en `audit.logs` | `libro-mayor` / `0.1.0` | Versión: en cada despliegue |
+| `AUDIT_ENABLED` | Activa los logs de solicitudes | `true` | `false` para pruebas sin schema `audit` |
+| `AUDIT_MAX_BODY_BYTES` | Máximo de body guardado por solicitud | `4096` | Rara vez |
+| `DB_ENGINE` | Motor de la base local | `postgresql` | `mssql` solo cuando se valide |
+| `DB_HOST` / `DB_PORT` | Servidor de la base local | `localhost` / `5432` | Docker o nube |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Base y credenciales | Obligatorias | Siempre |
+| `AUTH_URL` | URL interna de auth, sin `/auth` | Obligatoria | Por entorno (`http://auth:8000` en el Compose) |
+| `AUTH_TIMEOUT_SECONDS` | Espera máxima por llamada a auth | `30` | Si auth está lejos o lento |
+| `CORS_ORIGINS` | Orígenes web (lista JSON) | `[]` | Si un front llama directo, sin central |
+| `TRUSTED_PROXIES` | IPs/CIDR de la central o balanceador | `[]` | Al ponerlo detrás de la central |
+| `SAP_HOST` / `SAP_PORT` | Servidor HANA | vacío (SAP deshabilitado) / `30015` | Para consultar o sincronizar SAP |
+| `SAP_USER` / `SAP_PASSWORD` | Usuario HANA solo con SELECT sobre las vistas | vacío | Obligatorios si hay `SAP_HOST` |
+| `SAP_ENCRYPT` / `SAP_VALIDATE_CERTIFICATE` | TLS hacia HANA | `true` / `true` | `false` solo si el servidor no admite TLS (tráfico sin cifrar) |
+| `SAP_CONNECT_TIMEOUT_SECONDS` | Espera para abrir la conexión | `30` | Red lenta |
+| `SAP_QUERY_TIMEOUT_SECONDS` | Máximo por consulta | `300` | Cargas grandes (p. ej. cuentas 70) |
+| `SYNC_MAX_DAYS` | Máximo de días por ejecución manual | `366` | Si se necesitan rangos más largos |
+| `SYNC_POLL_SECONDS` | Cada cuánto el worker busca pendientes | `10` | Rara vez |
+| `SYNC_STALE_MINUTES` | Sin avance en este tiempo = interrumpida | `30` | Si un día de una cuenta tarda más (p. ej. ventas 70) |
+| `SYNC_SCHEDULE` | Turnos diarios del worker (`HH:MM,…` en `SAP_TIMEZONE`) | `06:00,10:00,14:00,18:00` (por confirmar) | Cambiar horas; `off` = sin horario |
+| `SAP_TIMEZONE` | Zona horaria del servidor SAP: define "hoy" en SAP y el horario | `America/Lima` (por confirmar) | Si SAP corre en otra zona |
+| `SEED_ENABLED` | Habilita `POST /admin/seed` | `false` | Solo para ejecutar el seed |
+
+## Documentación
+
+- [Instrucciones del servicio](AGENTS.md)
+- [Requisitos y alcance](docs/requisitos.md)
+- [Modelo de datos](docs/modelo-datos.md)
+- [Referencia: implementación previa en proyecto-05](docs/referencia-proyecto-05.md)
+
+## Dependencias con otros servicios
+
+- auth: identidad, empresa activa y permisos con alcance.
+- API central: publicación de rutas cuando el servicio funcione de forma
+  independiente (`LIBRO_MAYOR_ENABLED` / `LIBRO_MAYOR_URL`, pendiente).
+- SAP HANA: origen de datos de solo lectura, fuera de la plataforma
+  (`hdbcli` + `sqlalchemy-hana`). `tzdata` aporta la base de zonas horarias
+  (Windows y la imagen slim no traen una del sistema).

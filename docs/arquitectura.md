@@ -2,7 +2,7 @@
 
 ## Estado y colaboración
 
-Este documento describe el objetivo de la plataforma, no funciones implementadas. Actualmente auth tiene configuración, conexión PostgreSQL, modelos, migraciones aplicadas y un service de registro sin ruta; ver services/auth/readme.md. El usuario escribirá el código; el asistente explica/revisa y consulta antes de implementar o modificar el diseño. Avanzar un paso pequeño por vez según AGENTS.md.
+Este documento describe el objetivo de la plataforma, no funciones implementadas. El estado real de cada servicio está en readme.md (raíz) y en el readme de cada servicio. El usuario escribirá el código; el asistente explica/revisa y consulta antes de implementar o modificar el diseño. Avanzar un paso pequeño por vez según AGENTS.md.
 
 ## Estado y componentes
 
@@ -175,6 +175,13 @@ definido.
 
 Los servicios deshabilitados no recibirán tráfico desde la central.
 Habilitar una integración no concede permisos a usuarios o empresas.
+Implementado en la central: `<SERVICIO>_ENABLED` por configuración (hoy
+`AUTH_ENABLED`) y estado en su schema `gateway` administrable sin reinicio
+(releído cada 5 s). Deshabilitado, sus rutas responden 503 sin contactarlo y el
+servicio sigue corriendo. Auth solo se deshabilita por configuración. La
+central también mantiene una lista negra de IPs/rangos (`gateway.ip_blocks`,
+403 antes de enrutar). Detalle y administración:
+services/apigateway/docs/modulos-y-administracion.md.
 
 No se construirá inicialmente un sistema de plugins dinámicos.
 Se comenzará con configuración explícita y adaptadores pequeños.

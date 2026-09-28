@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     # reintentos: si se agota, la central responde 504.
     AUTH_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
 
+    # Cada cuántos segundos la central relee de la base el estado de los
+    # servicios (gateway.service_states). Un cambio desde la administración
+    # aplica en todas las réplicas en ≤ este tiempo, sin reiniciar.
+    GATEWAY_STATE_TTL_SECONDS: float = Field(default=5, ge=1, le=300)
+
+    # Lista negra de IPs (gateway.ip_blocks). false = no se aplica ningún bloqueo:
+    # interruptor para recuperar el acceso si un bloqueo deja fuera a quien no
+    # debía. Cambiarlo requiere reiniciar la central.
+    IP_BLOCKS_ENABLED: bool = True
+
     @model_validator(mode="after")
     def check_services(self):
         if self.AUTH_ENABLED and not self.AUTH_URL:
