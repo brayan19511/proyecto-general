@@ -72,6 +72,21 @@ class Settings(BaseSettings):
     # fallida como interrumpida (worker caído). Debe superar lo que tarda un día.
     SYNC_STALE_MINUTES: int = Field(default=30, ge=1, le=1440)
 
+    # Reclasificación: líneas por lote (una transacción por lote).
+    CLASSIFY_BATCH_SIZE: int = Field(default=2000, ge=100, le=50000)
+    # Consultas en vivo a SAP (POST /live-queries): responden en la misma solicitud.
+    LIVE_QUERY_MAX_DAYS: int = Field(default=366, ge=1, le=1830)
+    LIVE_QUERY_MAX_ACCOUNTS: int = Field(default=20, ge=1, le=200)
+    # Consultas a SAP a la vez en este proceso, sumando TODAS las solicitudes:
+    # protege a SAP aunque lleguen muchas consultas juntas.
+    LIVE_QUERY_PARALLEL: int = Field(default=4, ge=1, le=32)
+    # Máximo de líneas en una respuesta con detalle (view=full). El resumen no
+    # guarda líneas en memoria y no tiene este límite.
+    LIVE_QUERY_MAX_LINES: int = Field(default=100_000, ge=100, le=2_000_000)
+    # Tiempo máximo de una consulta; pasado, 504. La API central debe tener un
+    # timeout mayor para esta ruta (su default es 30 s).
+    LIVE_QUERY_TIMEOUT_SECONDS: int = Field(default=120, ge=5, le=1800)
+
     # Horario del worker (fase C): horas locales HH:MM separadas por coma, en
     # SAP_TIMEZONE. "off" = sin horario (solo ejecuciones manuales); vacío usa
     # el default (una variable vacía se trata como no definida). En cada turno
@@ -86,6 +101,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def check_sap(self):
+        if self.AUTH_URL.rstrip("/").endswith("/auth"):
+            # El cliente ya agrega /auth/me: con /auth aquí llamaría a /auth/auth/me (404).
+            raise ValueError("AUTH_URL va sin la ruta /auth (p. ej. http://127.0.0.1:8001)")
         if self.SAP_HOST and not (self.SAP_USER and self.SAP_PASSWORD):
             raise ValueError("Con SAP_HOST faltan SAP_USER y/o SAP_PASSWORD")
         try:

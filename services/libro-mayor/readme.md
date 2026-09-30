@@ -1,14 +1,16 @@
 # Servicio libro-mayor (gastos contables)
 
-Estado: **administración (CRUD) de compañía SAP y cuentas, y sincronización
-desde SAP manual y programada con delta (fases A, B y C)**, pendiente de
-probar contra HANA real. Hay configuración, conexión PostgreSQL,
+Estado: **sincronización desde SAP (manual, programada y delta), categorías,
+reglas y motor de clasificación, reclasificación y consultas en vivo en una
+sola llamada (tramos en paralelo, sin guardar resultados)**, pendiente de probar contra HANA real. Hay configuración, conexión PostgreSQL,
 logs (`packages/platform-audit`) con consulta para el administrador,
 health/ready, Dockerfile, Alembic (schema `libro_mayor`), actores, historial de
 cambios, identidad y permisos vía auth, rutas de compañía SAP y cuentas, seed,
 conexión HANA de solo lectura, lector de la vista (`app/sap/`), líneas del
-libro mayor, ejecuciones de sincronización y worker con horario y delta.
-Faltan reglas, filtro por áreas y consultas. Lo demás descrito en `docs/` son objetivos.
+libro mayor, ejecuciones de sincronización y worker con horario y delta,
+categorías, reglas, motor de clasificación y consultas en vivo. Faltan
+centros de costo con homologación, filtro por áreas y consultas sobre las
+líneas sincronizadas. Lo demás descrito en `docs/` son objetivos.
 
 ## Propósito
 
@@ -64,6 +66,11 @@ Todas bajo `/libro-mayor`. Las de empresa exigen `Authorization: Bearer` y
 | `POST /sync-runs` | `ledger.sync` (company) | `{account_id, date_from, date_to}` → 202 con la ejecución `pending`. 409 si la cuenta ya tiene una abierta o falta SAP; 422 si el rango es inválido, futuro o supera `SYNC_MAX_DAYS` |
 | `GET /sync-runs` | `ledger.sync` (company) | Ejecuciones (filtros `account_id`, `status`), más recientes primero |
 | `GET /sync-runs/{id}` | `ledger.sync` (company) | Estado y avance: `days_done`/`days_total`, filas leídas, nuevas y actualizadas, `safe_error` |
+| `GET/POST /categories`, `GET/PATCH/DELETE /categories/{id}` | `ledger.rules.manage` (company) | Categorías de dos niveles (`parent_id` = subcategoría). Baja: 409 si tiene subcategorías o reglas activas |
+| `GET/POST /rules`, `GET/PATCH/DELETE /rules/{id}` | `ledger.rules.manage` (company) | Reglas en orden de evaluación. Alta, edición y baja registran una reclasificación para el worker |
+| `POST /classification-runs` | `ledger.rules.manage` (company) | `{date_from?, date_to?}` → 202. Reclasifica todas las líneas (o un rango) con las reglas activas |
+| `GET /classification-runs`, `/{id}` | `ledger.rules.manage` (company) | Estado: `rows_checked`, `rows_changed` |
+| `POST /live-queries` | `ledger.live` (company) | `{accounts, date_from, date_to, split?, view?}` → **200 con la respuesta completa** (líneas clasificadas + resumen). Consulta SAP en vivo en la misma solicitud; no guarda nada. Ver "Consultas en vivo" |
 | `POST /admin/seed` | Admin de plataforma | Carga inicial de la empresa (solo con `SEED_ENABLED=true`; si no, 404). Ver "Seed" |
 | `GET /admin/logs` | Admin de plataforma (sin `X-Company-Id`) | Logs propios (filtros `trace_id`, `user_id`, `outcome`, `path_prefix`) |
 | `GET /admin/logs/{id}` | Admin de plataforma | Log con sus detalles y pasos |
@@ -90,10 +97,10 @@ Coste: dos llamadas a auth por solicitud de empresa (se puede reducir a una si
 auth agrega el id de usuario a `/me/permissions`). Sin reintentos; auth caído
 → 502, lento → 504. Por ahora solo Bearer, no `X-API-Key`.
 
-**Pendiente en auth:** los permisos `ledger.accounts.manage` y `ledger.sync`
-(alcance `company`) no existen todavía en su catálogo
-(`services/auth/app/core/permissions.py`). Hasta agregarlos y asignarlos a un
-rol, solo el administrador de plataforma gestiona cuentas y sincronizaciones.
+**Pendiente en auth:** los permisos `ledger.accounts.manage`, `ledger.sync`,
+`ledger.rules.manage` y `ledger.live` (alcance `company`) no existen todavía en
+su catálogo (`services/auth/app/core/permissions.py`). Hasta agregarlos y
+asignarlos a un rol, solo el administrador de plataforma usa esas rutas.
 
 ## Seed
 
@@ -213,6 +220,86 @@ traer datos). Las líneas y el estado de las ejecuciones se atribuyen al actor
 de sistema `libro-mayor.worker`; quién pidió la ejecución queda en su
 `created_by` y cada línea apunta a su última ejecución (`last_sync_run_id`).
 
+## Clasificación
+
+Motor: `app/services/classifier.py`, función pura usada igual por la
+sincronización, la reclasificación y las consultas en vivo.
+
+- Reglas activas de la empresa por `priority` y luego `id`; **gana la primera
+  que cumple**. Una condición vacía no filtra; todas las llenas deben cumplirse.
+- `account_code`, `counter_account_code`, `cost_center_code`: iguales exactos.
+- `include_text` debe aparecer y `exclude_text` no, sin distinguir
+  mayúsculas, en proveedor, descripción o referencias 1–3 (texto tal como
+  viene de SAP).
+- `amount_min`/`amount_max`: importe en moneda local **con signo**.
+- Resultado: `rule_id` en la línea (NULL = sin clasificar). La categoría y la
+  subcategoría se resuelven al leer: renombrarlas no obliga a reclasificar.
+  `report_name` vacío = nombre de la cuenta SAP.
+- Sin `tipo_regla` ni pandas (acuerdos).
+
+Cuándo se clasifica:
+
+| Momento | Qué líneas |
+| --- | --- |
+| Sincronización | Cada línea nueva o cambiada, con las reglas vigentes al guardar |
+| Alta, edición o baja de regla | Reclasificación `rule_change` en el worker: las que tenían esa regla + las que podrían cumplirla ahora (prefiltro SQL por cuenta, contrapartida, centro e importes; los textos se evalúan en Python) |
+| `POST /classification-runs` | Todas las de la empresa o un rango de contabilización. Usarla una vez para clasificar lo sincronizado antes de tener reglas |
+
+La reclasificación avanza por lotes (`CLASSIFY_BATCH_SIZE`) con commit por
+lote. No guarda historial por línea: el registro es la ejecución
+(`classification_runs`, con quién la originó en `created_by`).
+
+## Consultas en vivo
+
+Una sola llamada que consulta SAP, clasifica y **devuelve la respuesta
+completa**. No guarda nada en la base: la memoria se libera al responder.
+
+```json
+POST /libro-mayor/live-queries
+{"accounts": ["95*", "97*", "701110002"], "date_from": "2026-01-01", "date_to": "2026-12-31",
+ "split": "month", "view": "full"}
+```
+
+| Campo | Valores |
+| --- | --- |
+| `accounts` | `"95*"` = todas las que empiezan por 95; `"701110002"` = exacta. No hace falta que estén registradas; repetidas se ignoran |
+| `split` | `month` (default: un año = 12 tramos) o `day` |
+| `view` | `full` (default: líneas + resumen) o `summary` (solo totales, liviano) |
+
+Respuesta: `lines_total`, `chunks`, `elapsed_ms`, `summary` (por año, mes,
+categoría y subcategoría: cantidad e importes con signo) y `lines` (en orden
+contable, cada una con `rule_id`, categoría, subcategoría y `report_name`; null
+con `view=summary`).
+
+Cómo funciona:
+
+1. Parte el rango en tramos (meses o días).
+2. Consulta SAP **cada tramo en paralelo** en hilos de este proceso y clasifica
+   cada línea con las reglas activas (las mismas para todos los tramos).
+3. Une los tramos en orden y responde.
+
+Controles de memoria y carga:
+
+- **Pool compartido** (`LIVE_QUERY_PARALLEL`, 4): entre TODAS las solicitudes,
+  el proceso nunca tiene más de N consultas abiertas contra SAP; las demás
+  esperan turno. Probado: 6 consultas simultáneas → nunca más de 4 a SAP.
+- **`view=full`**: como máximo `LIVE_QUERY_MAX_LINES` (100 000) líneas; si se
+  supera, 422 sugiriendo acotar o pedir `view=summary`.
+- **`view=summary`**: cada tramo se resume al llegar y sus líneas se descartan;
+  un año pesa unos pocos KB y no tiene límite de líneas.
+- **Tiempo máximo** `LIVE_QUERY_TIMEOUT_SECONDS` (120 s) → 504. La API central
+  corta a los 30 s por defecto: al publicar la ruta hay que subirle el timeout
+  a esta operación.
+- Otros límites: `LIVE_QUERY_MAX_DAYS` (366) y `LIVE_QUERY_MAX_ACCOUNTS` (20).
+
+Errores: 422 (cuenta, rango o demasiadas líneas), 409 (falta SAP o compañía
+SAP), 502 (SAP falló o devolvió datos fuera de contrato; solo mensaje seguro),
+504 (tiempo). Alcance company por ahora: el filtro por áreas llega con la
+homologación de centros de costo.
+
+Prioridad del worker (sincronización y reclasificación): 1) reclasificaciones,
+2) sincronizaciones. Las consultas en vivo no pasan por el worker.
+
 ## Logs
 
 - Cada solicitud queda en `audit.logs` con el usuario y la empresa validados
@@ -260,6 +347,8 @@ crea el schema si no existe, guarda su versión en
 | `d96307b64e1a` historial de cambios | `change_history` |
 | `a5f6bc046f7c` sincronizaciones y lineas | `sync_runs` (una abierta por cuenta) y `ledger_lines` (única por clave SAP) |
 | `d608ca9bd49a` horario y delta | `sync_runs.schedule_slot` (única por cuenta y turno) y tipos `initial`/`delta`. El cambio del CHECK se escribió a mano: autogenerate no detecta cambios en CHECK |
+| `f1cfc1eac2ab` categorias reglas y consultas en vivo | `expense_categories`, `expense_rules`, `classification_runs`; `ledger_lines.rule_id` y `classified_at`; tablas de la consulta en vivo asíncrona (retiradas en la siguiente) |
+| `0708533d3e77` retirar consultas en vivo asincronas | Borra `live_queries`, `live_query_parts`, `live_query_lines` (decisión del usuario: la consulta en vivo responde en la misma llamada). Escrita a mano: autogenerate nunca propone borrar tablas |
 
 ```powershell
 .\enviroment\Scripts\python.exe -m alembic current
@@ -295,6 +384,11 @@ Cada archivo nuevo de modelos se importa en `app/models/__init__.py`.
 | `SYNC_STALE_MINUTES` | Sin avance en este tiempo = interrumpida | `30` | Si un día de una cuenta tarda más (p. ej. ventas 70) |
 | `SYNC_SCHEDULE` | Turnos diarios del worker (`HH:MM,…` en `SAP_TIMEZONE`) | `06:00,10:00,14:00,18:00` (por confirmar) | Cambiar horas; `off` = sin horario |
 | `SAP_TIMEZONE` | Zona horaria del servidor SAP: define "hoy" en SAP y el horario | `America/Lima` (por confirmar) | Si SAP corre en otra zona |
+| `CLASSIFY_BATCH_SIZE` | Líneas por lote al reclasificar | `2000` | Volúmenes grandes |
+| `LIVE_QUERY_MAX_DAYS` / `LIVE_QUERY_MAX_ACCOUNTS` | Límites de una consulta en vivo | `366` / `20` | Según la carga que tolere SAP |
+| `LIVE_QUERY_PARALLEL` | Consultas a SAP a la vez en el proceso, entre todas las solicitudes | `4` | Subir si SAP lo tolera; es el freno de carga |
+| `LIVE_QUERY_MAX_LINES` | Máximo de líneas con `view=full` | `100000` | Según la memoria del contenedor |
+| `LIVE_QUERY_TIMEOUT_SECONDS` | Tiempo máximo de una consulta en vivo | `120` | Rangos grandes; subir también el de la central |
 | `SEED_ENABLED` | Habilita `POST /admin/seed` | `false` | Solo para ejecutar el seed |
 
 ## Documentación

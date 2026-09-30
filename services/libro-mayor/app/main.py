@@ -9,7 +9,9 @@ from platform_audit import AuditConfig, AuditMiddleware
 from app.api.routes import (
     accounts_router,
     health_router,
+    live_queries_router,
     logs_router,
+    rules_router,
     sap_company_router,
     seed_router,
     sync_runs_router,
@@ -82,6 +84,8 @@ api.include_router(health_router.router)
 api.include_router(accounts_router.router)
 api.include_router(sap_company_router.router)
 api.include_router(sync_runs_router.router)
+api.include_router(rules_router.router)
+api.include_router(live_queries_router.router)
 api.include_router(logs_router.router)
 # Sin SEED_ENABLED=true la ruta no existe (404): se habilita solo para ejecutarla.
 if settings.SEED_ENABLED:

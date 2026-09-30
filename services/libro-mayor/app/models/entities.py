@@ -229,31 +229,13 @@ class SyncRun(AuditMixin, Base):
     schedule_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class LedgerLine(AuditMixin, Base):
-    """Línea del libro mayor copiada de SAP, tal como viene (acuerdo).
+class SapLineColumns:
+    """Columnas de una línea tal como la devuelve la vista SAP, sin corregir.
 
-    Clave SAP: (company_id, sap_transaction_id, sap_line). Nunca se borra: si
-    SAP la cambia, la sincronización actualiza sus datos. created_by /
-    updated_by son el actor del worker; last_sync_run_id dice qué ejecución
-    la trajo o actualizó por última vez (y por ella, quién la pidió).
-    La clasificación (rule_id) se agrega con el motor de reglas.
+    Separadas de LedgerLine para leerlas en un solo lugar. La correspondencia
+    con las columnas de la vista está en FIELD_MAP (app/services/sync_service.py).
     """
 
-    __tablename__ = "ledger_lines"
-    __table_args__ = (
-        UniqueConstraint("company_id", "sap_transaction_id", "sap_line", name="uq_ledger_lines_sap_key"),
-        Index("ix_ledger_lines_company_posting", "company_id", "posting_date"),
-        Index("ix_ledger_lines_account_posting", "account_id", "posting_date"),
-        Index("ix_ledger_lines_company_cost_center", "company_id", "cost_center_code"),
-        Index("ix_ledger_lines_company_sap_updated", "company_id", "sap_updated_at"),
-    )
-
-    company_id: Mapped[str] = mapped_column(String(36))
-    # Cuenta registrada que la trajo (no la cuenta SAP: esa es account_code).
-    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
-    last_sync_run_id: Mapped[str] = mapped_column(ForeignKey("sync_runs.id"))
-
-    # --- Datos de SAP (vista VW_LIBRO_MAYOR_PERSONALIZADO_2) ---
     sap_transaction_id: Mapped[int] = mapped_column(BigInteger)  # transaccion_id
     sap_line: Mapped[int] = mapped_column(Integer)  # linea
     posting_date: Mapped[date] = mapped_column(Date)  # fecha_contabilizacion
@@ -281,3 +263,122 @@ class LedgerLine(AuditMixin, Base):
     # Hora de SAP tal como viene (sin zona: hora del servidor SAP).
     sap_created_at: Mapped[datetime | None] = mapped_column(DateTime)  # fecha_creacion
     sap_updated_at: Mapped[datetime | None] = mapped_column(DateTime)  # fecha_actualizacion
+
+
+class LedgerLine(SapLineColumns, AuditMixin, Base):
+    """Línea del libro mayor copiada de SAP, tal como viene (acuerdo), y su clasificación.
+
+    Clave SAP: (company_id, sap_transaction_id, sap_line). Nunca se borra: si
+    SAP la cambia, la sincronización actualiza sus datos. created_by /
+    updated_by son el actor del worker; last_sync_run_id dice qué ejecución
+    la trajo o actualizó por última vez (y por ella, quién la pidió).
+
+    rule_id: regla que la clasifica (NULL = sin clasificar). Es un dato
+    derivado: se recalcula al sincronizar y al reprocesar; sin historial por
+    línea (el registro es la ejecución de clasificación).
+    """
+
+    __tablename__ = "ledger_lines"
+    __table_args__ = (
+        UniqueConstraint("company_id", "sap_transaction_id", "sap_line", name="uq_ledger_lines_sap_key"),
+        Index("ix_ledger_lines_company_posting", "company_id", "posting_date"),
+        Index("ix_ledger_lines_account_posting", "account_id", "posting_date"),
+        Index("ix_ledger_lines_company_cost_center", "company_id", "cost_center_code"),
+        Index("ix_ledger_lines_company_sap_updated", "company_id", "sap_updated_at"),
+        Index("ix_ledger_lines_company_rule", "company_id", "rule_id"),
+    )
+
+    company_id: Mapped[str] = mapped_column(String(36))
+    # Cuenta registrada que la trajo (no la cuenta SAP: esa es account_code).
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
+    last_sync_run_id: Mapped[str] = mapped_column(ForeignKey("sync_runs.id"))
+    rule_id: Mapped[str | None] = mapped_column(ForeignKey("expense_rules.id"))
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExpenseCategory(AuditMixin, Base):
+    """Categoría de gasto de una empresa, en dos niveles (p. ej. GV08 OPERACIONES
+    → DIFERENCIA EN UNIDADES DE COSTEO). parent_id NULL = categoría; con
+    parent_id = subcategoría de una categoría (no hay tercer nivel).
+
+    El código es único por empresa entre las activas, en ambos niveles. Las
+    reglas apuntan a una categoría o subcategoría: renombrarla no obliga a
+    reclasificar líneas.
+    """
+
+    __tablename__ = "expense_categories"
+    __table_args__ = (unique_active("uq_expense_categories_company_code_active", "company_id", "code"),)
+
+    company_id: Mapped[str] = mapped_column(String(36))
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("expense_categories.id"))
+    code: Mapped[str] = mapped_column(String(50))
+    name: Mapped[str] = mapped_column(String(150))
+
+
+class ExpenseRule(AuditMixin, Base):
+    """Regla de clasificación (antes finance.reglas_gastos).
+
+    Condiciones (vacía = no filtra; todas las llenas deben cumplirse):
+    account_code, counter_account_code y cost_center_code son iguales exactos;
+    include_text / exclude_text se buscan sin distinguir mayúsculas en
+    proveedor, descripción y referencias 1–3; amount_min / amount_max comparan
+    el importe en moneda local con signo.
+    Se evalúan por priority y luego id: gana la primera que cumple.
+    Resultado: category_id y report_name (nombre para reportes; vacío = el
+    nombre de la cuenta SAP). Sin tipo_regla (acuerdo).
+    """
+
+    __tablename__ = "expense_rules"
+    __table_args__ = (
+        Index("ix_expense_rules_company_priority", "company_id", "is_active", "priority"),
+        CheckConstraint(
+            "amount_min IS NULL OR amount_max IS NULL OR amount_min <= amount_max", name="ck_expense_rules_amounts"
+        ),
+    )
+
+    company_id: Mapped[str] = mapped_column(String(36))
+    priority: Mapped[int] = mapped_column(Integer)
+    account_code: Mapped[str | None] = mapped_column(String(50))
+    counter_account_code: Mapped[str | None] = mapped_column(String(100))
+    cost_center_code: Mapped[str | None] = mapped_column(String(100))
+    include_text: Mapped[str | None] = mapped_column(String(255))
+    exclude_text: Mapped[str | None] = mapped_column(String(255))
+    amount_min: Mapped[Decimal | None] = mapped_column(Numeric(19, 4))
+    amount_max: Mapped[Decimal | None] = mapped_column(Numeric(19, 4))
+    category_id: Mapped[str] = mapped_column(ForeignKey("expense_categories.id"))
+    report_name: Mapped[str | None] = mapped_column(String(150))
+
+
+class ClassificationRun(AuditMixin, Base):
+    """Reclasificación de líneas sincronizadas (trabajo del worker; no consulta SAP).
+
+    - reason=rule_change: la crea el alta, edición o baja de una regla; revisa
+      solo las líneas candidatas (las que tenían esa regla y las que podrían
+      cumplirla ahora).
+    - reason=manual: POST /classification-runs; revisa las líneas con fecha de
+      contabilización en [date_from, date_to] (o todas si no hay rango).
+    Avanza por lotes ordenados por id (last_line_id), con commit por lote.
+    """
+
+    __tablename__ = "classification_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'running', 'succeeded', 'failed')", name="ck_classification_runs_status"),
+        CheckConstraint("reason IN ('rule_change', 'manual')", name="ck_classification_runs_reason"),
+        Index("ix_classification_runs_status_created", "status", "created_at"),
+        Index("ix_classification_runs_company_created", "company_id", "created_at"),
+    )
+
+    company_id: Mapped[str] = mapped_column(String(36))
+    reason: Mapped[str] = mapped_column(String(20))
+    rule_id: Mapped[str | None] = mapped_column(ForeignKey("expense_rules.id"))
+    date_from: Mapped[date | None] = mapped_column(Date)
+    date_to: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    rows_checked: Mapped[int] = mapped_column(Integer, default=0)
+    rows_changed: Mapped[int] = mapped_column(Integer, default=0)
+    last_line_id: Mapped[str | None] = mapped_column(String(36))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    safe_error: Mapped[str | None] = mapped_column(String(500))
+    trace_id: Mapped[str | None] = mapped_column(String(36))

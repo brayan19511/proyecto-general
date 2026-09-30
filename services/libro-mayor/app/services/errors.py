@@ -26,3 +26,15 @@ class ConflictError(ServiceError):
     """La operación choca con el estado actual (duplicado, superposición, falta configuración)."""
 
     status_code = 409
+
+
+class UpstreamError(ServiceError):
+    """SAP falló o devolvió datos fuera de contrato (mensaje seguro, sin detalles internos)."""
+
+    status_code = 502
+
+
+class DeadlineExceededError(ServiceError):
+    """La operación superó su tiempo máximo."""
+
+    status_code = 504

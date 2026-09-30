@@ -20,7 +20,9 @@ así no se pierden cambios hechos ese día después de la lectura anterior. Un
 sync manual no la mueve: solo cubre su rango de contabilización.
 
 Las líneas se guardan tal como vienen de SAP (acuerdo): sin corregir textos,
-signos ni centros de costo vacíos. Todavía sin clasificar (acuerdo).
+signos ni centros de costo vacíos. Cada línea nueva o cambiada se clasifica al
+guardarse con las reglas activas en ese momento (classifier.py); si las
+reglas cambian después, lo corrige la reclasificación.
 """
 
 import logging
@@ -39,6 +41,7 @@ from app.sap.connection import sap_enabled
 from app.sap.ledger_reader import AccountFilter, SapLedgerReader
 from app.services.account_service import has_open_run
 from app.services.actors import SCHEDULER, system_actor_id, user_actor_id
+from app.services.classifier import classify, load_rules
 from app.services.errors import ConflictError, InvalidDataError, NotFoundError
 from app.services.sap_company_service import active_sap_company
 
@@ -373,7 +376,7 @@ def process(db: Session, run_id: str) -> None:
                 label = str(day)
                 rows = reader.lines_by_posting_date(accounts, day, day)
             with db.begin():
-                run = db.get(SyncRun, run_id, with_for_update=True)
+                run = db.get(SyncRun, run_id, with_for_update=True, populate_existing=True)
                 inserted, updated = _save_rows(db, run, actor_id, rows)
                 now = utcnow()
                 run.days_done += 1
@@ -389,7 +392,7 @@ def process(db: Session, run_id: str) -> None:
         logger.info("Ejecución %s terminada", run_id)
     except Exception as exc:  # noqa: BLE001 - cualquier fallo termina la ejecución como fallida.
         db.rollback()
-        message = _safe_message(exc)
+        message = safe_message(exc)
         # Solo el mensaje seguro: el texto crudo de una excepción puede traer datos
         # o credenciales (regla de logs: de las excepciones, solo el tipo).
         logger.error("Ejecución %s fallida: %s", run_id, message)
@@ -398,7 +401,12 @@ def process(db: Session, run_id: str) -> None:
 
 
 def _save_rows(db: Session, run: SyncRun, actor_id: str, rows: list[dict]) -> tuple[int, int]:
-    """Inserta o actualiza las líneas leídas de SAP. Devuelve (insertadas, actualizadas)."""
+    """Inserta o actualiza las líneas leídas de SAP y las clasifica. Devuelve (insertadas, actualizadas).
+
+    "actualizadas" cuenta cambios de datos de SAP. Si solo cambia la
+    clasificación (las reglas cambiaron desde la última vez), se corrige sin
+    contarla como actualización de SAP.
+    """
     values = [to_line_values(row) for row in rows]
     keys = [(v["sap_transaction_id"], v["sap_line"]) for v in values]
     if len(set(keys)) != len(keys):
@@ -414,14 +422,16 @@ def _save_rows(db: Session, run: SyncRun, actor_id: str, rows: list[dict]) -> tu
             existing[(line.sap_transaction_id, line.sap_line)] = line
 
     now = utcnow()
+    rules = load_rules(db, run.company_id)  # Reglas vigentes en esta transacción.
     inserted = updated = 0
     for key, line_values in zip(keys, values):
+        rule_id = classify(line_values, rules)
         line = existing.get(key)
         if line is None:
             db.add(
                 LedgerLine(
                     company_id=run.company_id, account_id=run.account_id, last_sync_run_id=run.id,
-                    created_at=now, created_by=actor_id, **line_values,
+                    rule_id=rule_id, classified_at=now, created_at=now, created_by=actor_id, **line_values,
                 )
             )
             inserted += 1
@@ -430,12 +440,16 @@ def _save_rows(db: Session, run: SyncRun, actor_id: str, rows: list[dict]) -> tu
         if line.account_id != run.account_id:  # La trajo otra cuenta registrada (p. ej. un prefijo dado de baja).
             changes["account_id"] = run.account_id
         if changes:
+            updated += 1
+            line.last_sync_run_id = run.id
+        if line.rule_id != rule_id:
+            changes["rule_id"] = rule_id
+            line.classified_at = now
+        if changes:
             for name, value in changes.items():
                 setattr(line, name, value)
-            line.last_sync_run_id = run.id
             line.updated_at = now
             line.updated_by = actor_id
-            updated += 1
     return inserted, updated
 
 
@@ -446,7 +460,7 @@ def _finish(run: SyncRun, status: str, actor_id: str, now: datetime, error: str 
     run.safe_error = error[:500] if error else None
 
 
-def _safe_message(exc: Exception) -> str:
+def safe_message(exc: Exception) -> str:
     """Mensaje para la fila de la ejecución y el log: sin SQL, credenciales ni datos.
 
     Errores propios: su mensaje (ya pensado para mostrarse). Errores del driver:

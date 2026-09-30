@@ -15,7 +15,10 @@ manual (`POST /sync-runs`) y programada con delta (worker `python -m app.worker`
 fases A, B y C);
 identidad vía auth (`app/api/dependencies.py`). Conexión HANA de solo lectura
 y lector de la vista en `app/sap/`. Pendiente de probar contra HANA real
-(`scripts/check_sap.py`). Sin reglas, filtro por áreas ni consultas.
+(`scripts/check_sap.py`). Categorías, reglas, motor (`classifier.py`),
+reclasificación y consultas en vivo en una llamada (`live_query_service.py`). Sin
+centros de costo/homologación, filtro por áreas ni consultas sobre
+`ledger_lines`.
 Ver readme.md.
 
 Convenciones del código existente (seguirlas):
@@ -34,9 +37,18 @@ Convenciones del código existente (seguirlas):
   (`SAP_COLUMNS`), identificadores validados con `validate_identifier` y
   valores como parámetros. Nunca escribir en SAP ni interpolar valores.
 - Trabajo pesado solo en el worker: una ruta HTTP registra la ejecución
-  (`sync_runs`, 202) y nunca consulta SAP. El worker guarda cada día (datos +
+  (`sync_runs`, 202) y nunca consulta SAP. Única excepción (decisión del
+  usuario, 2026-09-30): `POST /live-queries` consulta SAP en la misma solicitud,
+  por tramos en un pool de hilos compartido (`LIVE_QUERY_PARALLEL`), con tope
+  de líneas y de tiempo, y sin guardar resultados. El worker guarda cada día (datos +
   avance) en una transacción y registra solo mensajes seguros (tipo y código
   del error, nunca el texto crudo).
+- Clasificación: una sola función (`classifier.classify`) para sync,
+  reclasificación y consultas en vivo. Cambiar una regla nunca reclasifica en
+  el HTTP: registra un `classification_runs` en la misma transacción.
+- Filas que el worker vuelve a leer con bloqueo: `db.get(..., with_for_update=True,
+  populate_existing=True)`. Sin `populate_existing`, SQLAlchemy devuelve el
+  objeto en memoria sin releer ni bloquear (se perdían sumas con 2 workers).
 - Marca de agua = `date_to` del último `initial`/`delta` correcto; nunca la
   mueve un `sync` manual. El delta relee desde ese día inclusive (el upsert
   hace segura la repetición). No leer la marca de agua de las líneas locales.

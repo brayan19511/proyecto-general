@@ -116,26 +116,43 @@ registrar el mismo valor; las filas dadas de baja se conservan.
 
 ## expense_categories
 
-Acuerdo: catálogo de categorías para no repetir textos en reglas.
+**Implementado** (revisión `f1cfc1eac2ab`). Acuerdo: catálogo de categorías.
 
-`company_id`, `parent_id` nullable (categoría → subcategoría, dos niveles),
-`code` (p. ej. `GV08`), `name` (p. ej. `OPERACIONES`). Único activo
-(`company_id`, `parent_id`, `code`). Renombrar una categoría no obliga a
-reprocesar líneas.
+`company_id`, `parent_id` nullable (NULL = categoría; con valor =
+subcategoría; solo dos niveles), `code` (p. ej. `GV08`), `name` (p. ej.
+`OPERACIONES`). Único activo (`company_id`, `code`) en ambos niveles. Se
+edita `code` y `name`; no cambia de nivel ni de padre. Baja: 409 si tiene
+subcategorías o reglas activas. Historial en `change_history`.
 
 ## expense_rules
 
-Reglas de clasificación (antes `finance.reglas_gastos`).
+**Implementado** (revisión `f1cfc1eac2ab`). Antes `finance.reglas_gastos`.
 
 `company_id`, `priority`, condiciones (`account_code`, `counter_account_code`,
 `cost_center_code`, `include_text`, `exclude_text`, `amount_min`,
-`amount_max`) y resultado (`category_id` → subcategoría, `report_name`).
+`amount_max` en `Numeric(19,4)`) y resultado (`category_id` → categoría o
+subcategoría, `report_name`).
 
-- Acuerdo: sin `tipo_regla`; el tipo se deduce de las condiciones llenas.
-- Validaciones: al menos una condición; `amount_min <= amount_max`; la
-  categoría es de la misma empresa.
+- Acuerdo: sin `tipo_regla`.
+- Validaciones: al menos una condición; `amount_min <= amount_max` (también
+  CHECK); categoría activa de la misma empresa.
 - Orden `priority, id`; gana la primera que cumple todas sus condiciones.
-- Índice (`company_id`, `is_active`, `priority`, `id`).
+- Índice (`company_id`, `is_active`, `priority`). Historial en `change_history`.
+
+## classification_runs
+
+**Implementado.** Reclasificación de `ledger_lines` en el worker.
+`reason` (`rule_change` | `manual`), `rule_id` (la regla que la originó),
+`date_from`/`date_to` (manual, opcional), `status`, `rows_checked`,
+`rows_changed`, `last_line_id` (avance por lotes), `started_at`,
+`heartbeat_at`, `finished_at`, `safe_error`, `trace_id`.
+
+## Consultas en vivo (sin tablas)
+
+Retiradas en la revisión `0708533d3e77` (decisión del usuario, 2026-09-30):
+`live_queries`, `live_query_parts` y `live_query_lines` eran de la versión
+asíncrona. La consulta en vivo ahora responde en la misma solicitud y no
+guarda resultados.
 
 ## ledger_lines
 
@@ -157,9 +174,10 @@ como vienen (acuerdo). Nunca se borran.
   `tipo_cuenta = cuenta[:2]`) y `last_sync_run_id` (FK a la ejecución que la
   trajo o actualizó por última vez). `created_by`/`updated_by` = actor
   `libro-mayor.worker`.
-- Pendiente (motor de reglas): `rule_id` nullable (FK a `expense_rules`) y
-  `classified_at`. La categoría y el nombre de reporte se obtendrán por
-  `rule_id`, no se copian.
+- Clasificación (revisión `f1cfc1eac2ab`): `rule_id` nullable (FK
+  `fk_ledger_lines_rule_id` a `expense_rules`) y `classified_at`. La
+  categoría y el nombre de reporte se obtienen por `rule_id`, no se copian.
+- Las columnas SAP están en el mixin `SapLineColumns` (`entities.py`).
 - Índices: (`company_id`, `posting_date`), (`account_id`, `posting_date`),
   (`company_id`, `cost_center_code`), (`company_id`, `sap_updated_at`).
 - Confirmar con `scripts/check_sap.py` los tipos reales y si `centro_area` y

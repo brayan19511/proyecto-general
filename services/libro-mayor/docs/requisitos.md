@@ -119,38 +119,47 @@ clasifica con las reglas activas.
 
 ## Reglas de gasto
 
-Campos (heredados de proyecto-05): prioridad, tipo (`CUENTA`, `MIXTA`, `TEXTO`),
-cuenta, cuenta contrapartida, centro de costo, texto incluido, texto excluido,
-monto mínimo/máximo, y resultado: código, subcódigo y nombre de reporte.
+**Implementado** (2026-09-30). Categorías de dos niveles, reglas con las
+condiciones de proyecto-05 sin `tipo_regla`, motor puro
+(`app/services/classifier.py`). Ver readme, "Clasificación".
 
-- Evaluación: reglas activas de la empresa ordenadas por `prioridad, id`; la
-  primera que cumple todas sus condiciones gana. Condición vacía = no filtra.
-- Texto: búsqueda sin distinguir mayúsculas en proveedor, descripción y
-  referencias 1–3 (lista cerrada).
-- Sin regla: `SIN_CLASIFICAR` / `OTROS` y nombre de la cuenta SAP.
-- El mismo motor se usa en sincronización y en reproceso (determinismo).
-- Pendiente: si `tipo_regla` restringe qué campos se admiten o es solo
-  informativo; validar que una regla tenga al menos una condición.
+- Evaluación por `priority, id`; gana la primera que cumple. Condición vacía =
+  no filtra. Sin regla = sin clasificar (`rule_id` NULL); el nombre de reporte
+  cae al de la cuenta SAP.
+- Texto: sin distinguir mayúsculas en proveedor, descripción y referencias 1–3.
 - Acuerdo: los importes se guardan y devuelven con signo, tal como SAP
-  (433 de 2 343 líneas negativas en septiembre 2026); la presentación la
-  resuelve el front. Interpretación: las reglas con monto comparan el valor con
-  signo, como en proyecto-05 (confirmar al implementar el motor).
-- Textos con caracteres dañados (`Nota Cr�dito`): según el usuario vienen de
-  SAP. Se guardan tal cual; una regla de texto debe escribirse como aparece en
-  el origen. Corregirlo corresponde al equipo SAP (vista o datos).
+  (433 de 2 343 líneas negativas en septiembre 2026). Las reglas con monto
+  comparan el valor con signo (interpretación implementada; confirmar).
+- Textos con caracteres dañados (`Nota Cr�dito`): vienen de SAP. Se guardan
+  tal cual; una regla de texto debe escribirse como aparece en el origen.
+- Pendiente: si las cuentas 70 (ventas) usan las mismas categorías y reglas o
+  un catálogo propio. Hoy el motor no distingue: aplica las reglas de la
+  empresa a toda línea.
 
 ## Reproceso
 
-- Crear/editar una regla reprocesa las líneas candidatas (las que ya tenía esa
-  regla + las que ahora podrían cumplirla) con el conjunto completo de reglas.
-- Baja lógica de una regla reprocesa las líneas que la tenían.
-- Reproceso manual por cuenta y rango de fechas.
-- Propuesta: ejecutar el reproceso como trabajo persistido (igual que la
-  sincronización) cuando el volumen lo requiera; el guardado de la regla y su
-  historial es transaccional, el reproceso posterior puede ser asíncrono.
-- Propuesta: la clasificación es un dato derivado; no se guarda historial por
-  línea, sino un registro por ejecución de reproceso (regla, actor, conteos).
-  Pendiente de confirmar.
+**Implementado.** Crear, editar o dar de baja una regla registra una
+reclasificación en la misma transacción; la hace el worker con las líneas
+candidatas (las que tenían la regla + las que podrían cumplirla). También
+manual (`POST /classification-runs`) para todo o un rango. La clasificación es
+un dato derivado: sin historial por línea; el registro es la ejecución.
+
+## Consultas en vivo
+
+**Implementado** (2026-09-30, pedido y diseño del usuario). Una sola llamada:
+consulta SAP de una o varias cuentas (`["95*", "97*", "701110002"]`), parte el
+rango en tramos (mes por defecto, o día), los consulta en paralelo, clasifica
+al vuelo y devuelve la respuesta completa (líneas + resumen, o solo resumen).
+No guarda resultados ni toca `ledger_lines`.
+
+- Primera versión asíncrona (202 + consultar después, resultados en tablas)
+  reemplazada por decisión del usuario: preocupaba acumular resultados con
+  miles de consultas.
+- Límites (del asistente, ajustables): 4 consultas a SAP a la vez por proceso,
+  100 000 líneas con detalle, 120 s, 366 días, 20 cuentas.
+- Pendiente: filtro por áreas (hoy alcance company); timeout de esta ruta en
+  la central al publicarla (> 30 s).
+- Futuro posible (no ahora): una cuenta por consulta si el volumen lo exige.
 
 ## Consultas
 
@@ -245,11 +254,10 @@ Cada paso se explica y se acuerda antes de escribir código:
 3. Conexión HANA de solo lectura y consulta de prueba a la vista. Hecho en
    código (fase A: `app/sap/`, `scripts/check_sap.py`, seed); falta que el
    usuario lo pruebe contra HANA real.
-4. Modelos de cuentas, reglas e historial. Hecho: actores, compañía SAP y
-   cuentas con CRUD completo (alta, consulta, edición, baja lógica),
-   validación de superposición e historial genérico. Falta: reglas y
-   categorías.
-5. Motor de reglas (función pura, probada aisladamente).
+4. ~~Modelos de cuentas, reglas e historial.~~ Hecho: actores, compañía SAP,
+   cuentas, categorías y reglas con CRUD completo e historial.
+5. ~~Motor de reglas (función pura, probada aisladamente).~~ Hecho
+   (2026-09-30), también integrado en la sincronización.
 6. ~~Sincronización manual de una cuenta y un día, con registro de ejecución
    (fase B).~~ Hecho en código (2026-09-28): `sync_runs`, `ledger_lines`,
    `POST /sync-runs` y worker; sin clasificar (acuerdo). Falta probar contra
@@ -261,5 +269,6 @@ Cada paso se explica y se acuerda antes de escribir código:
    cambio de una línea (el delta depende de ellas).
 8. Autenticación contra auth (hecha) y filtro por áreas (pendiente).
 9. Consultas, resumen y exportación.
-10. Reproceso y administración de reglas.
+10. ~~Reproceso y administración de reglas.~~ Hecho (2026-09-30). Además:
+    consultas en vivo en una llamada, por tramos en paralelo.
 11. Publicación de rutas en la central.

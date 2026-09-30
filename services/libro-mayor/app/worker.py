@@ -3,9 +3,12 @@
     python -m app.worker          # queda corriendo; busca pendientes cada SYNC_POLL_SECONDS
     python -m app.worker --once   # procesa las pendientes que haya y termina (pruebas)
 
-Toma las ejecuciones "pending" de libro_mayor.sync_runs, una por vez, y las
-procesa (app/services/sync_service.py). Varios workers pueden correr a la vez:
-cada uno toma una ejecución distinta. Al recibir SIGTERM/Ctrl+C termina la
+Toma trabajo pendiente, una unidad por vez, en este orden de prioridad:
+1. Reclasificaciones (classification_runs): no consultan SAP.
+2. Sincronizaciones (sync_runs).
+Varios workers pueden correr a la vez: cada uno toma una unidad distinta
+(SKIP LOCKED). Las consultas en vivo no pasan por aquí: responden en la misma
+solicitud HTTP (app/services/live_query_service.py). Al recibir SIGTERM/Ctrl+C termina la
 ejecución en curso y sale; si lo matan antes, esa ejecución queda "running"
 sin avance y se marca interrumpida pasado SYNC_STALE_MINUTES.
 
@@ -23,7 +26,7 @@ import time
 
 from app.core.config import settings
 from app.core.db.connection import SessionLocal
-from app.services.sync_service import claim_next, enqueue_scheduled, mark_stale_runs, process
+from app.services import classification_service, sync_service
 
 logger = logging.getLogger("libro_mayor.worker")
 _stop = False
@@ -44,12 +47,7 @@ def run(once: bool = False) -> None:
     )
     while not _stop:
         with SessionLocal() as db:
-            mark_stale_runs(db)
-            enqueue_scheduled(db)  # Crea las del turno actual que falten (no hace nada si ya existen).
-            run_id = claim_next(db)
-            if run_id is not None:
-                logger.info("Procesando ejecución %s", run_id)
-                process(db, run_id)
+            if _work_once(db):
                 continue  # Puede haber más pendientes: buscar sin esperar.
         if once:
             break
@@ -59,6 +57,25 @@ def run(once: bool = False) -> None:
                 break
             time.sleep(1)
     logger.info("Worker detenido.")
+
+
+def _work_once(db) -> bool:
+    """Marca interrumpidos, programa el turno y procesa UNA unidad. True si hubo trabajo."""
+    sync_service.mark_stale_runs(db)
+    classification_service.mark_stale(db)
+    sync_service.enqueue_scheduled(db)  # Crea las del turno actual que falten (no hace nada si ya existen).
+
+    run_id = classification_service.claim_next(db)
+    if run_id is not None:
+        logger.info("Procesando reclasificación %s", run_id)
+        classification_service.process(db, run_id)
+        return True
+    run_id = sync_service.claim_next(db)
+    if run_id is not None:
+        logger.info("Procesando sincronización %s", run_id)
+        sync_service.process(db, run_id)
+        return True
+    return False
 
 
 def main() -> None:
