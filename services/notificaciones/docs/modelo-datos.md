@@ -1,9 +1,9 @@
 # Modelo de datos de notificaciones
 
-Estado (2026-10-01): **propuesta** para el paso 1 del alcance (envío con
-cuerpo armado). Nada implementado ni acordado todavía; cada tabla se revisa
-con el usuario antes de escribir código. Las plantillas (paso 2) no están
-aquí.
+Estado (2026-10-01): **implementado** (migraciones Alembic del schema
+`notificaciones`). La tabla `templates` del paso 2 está en
+`app/models/entities.py` y en `docs/api.md` (sección Plantillas). Las secciones
+conservan cómo se propuso y acordó cada tabla.
 
 ## Convenciones
 
@@ -47,6 +47,10 @@ misma transacción que el cambio. Acciones previstas:
 Las transiciones que hace el worker al enviar no van aquí: quedan en
 `message_attempts`, que ya es su historial.
 
+Acuerdo (2026-10-01): columna propia `reason` (String(500), opcional) para el
+motivo que indica quien actúa (reproceso, cancelación u otras acciones
+futuras), en lugar de guardarlo dentro de `after`.
+
 ## smtp_accounts
 
 Cuentas SMTP por empresa (acuerdo 2).
@@ -73,6 +77,10 @@ Cuentas SMTP por empresa (acuerdo 2).
   `password_changed: true`.
 - Cifrado: `cryptography` (Fernet). Propuesta: `MultiFernet` con varias claves
   en el entorno para poder rotarlas sin perder las contraseñas guardadas.
+- Acuerdos 4a (2026-10-01): `SMTP_ENCRYPTION_KEYS` obligatoria (sin ella el
+  servicio no arranca); CHECK de `port` (1–65535), `security`
+  (`starttls`/`ssl`), `priority >= 0` y `timeout_seconds` (1–120); no se
+  guarda el resultado de la última prueba.
 
 ## dispatches
 
@@ -221,6 +229,63 @@ cuentas sin unicidad; el reproceso manual reinicia `attempts_in_cycle`.
   consumidor (p. ej. correos del proveedor) más los fijos. En el paso 2 los
   fijos vendrán de la plantilla (equivalente a `mailing_parameters` de
   proyecto-05) y se guardará aquí el resultado ya combinado.
+
+## Implementación del paso 5 (2026-10-01)
+
+`dispatches`, `messages`, `message_attachments` y `message_attempts` en
+`app/models/entities.py`. Ajustes respecto a la propuesta:
+
+- Índice (`dispatch_id`, `status`) en lugar de (`company_id`, `dispatch_id`):
+  sirve al conteo por estado del progreso y la unicidad
+  (`dispatch_id`, `sequence`) ya cubre la búsqueda por envío.
+- CHECK adicionales: `ck_dispatches_notice_target` (un `failure_notice` exige
+  `notice_for_dispatch_id`; un `standard` no lo admite), `ck_messages_cancelled`
+  (`cancelled` ⇔ `cancelled_at` y `cancel_reason`), `ck_message_attachments_purge`
+  (o hay contenido, o hay `content_purged_at`) y contadores no negativos.
+- FK sin `ON DELETE CASCADE`: nada se borra físicamente.
+- `message_attempts` rechaza UPDATE/DELETE desde el ORM, como `change_history`.
+
+## Worker (paso 7, 2026-10-01)
+
+`python -m app.worker` (`app/worker.py` + `app/services/delivery_service.py`):
+
+- Toma un mensaje por vez (`FOR UPDATE SKIP LOCKED`), lo pasa a `sending` con
+  bloqueo y confirma; envía fuera de la transacción; guarda el resultado en
+  otra.
+- Por cuenta (prioridad): `MAIL FROM`, `RCPT TO` y `DATA` por separado para
+  saber si un fallo fue antes de la aceptación.
+  - Antes de aceptar (conexión, TLS, auth, remitente rechazado, destinatarios
+    4xx, DATA 4xx, contraseña ilegible): siguiente cuenta.
+  - Todos los destinatarios 5xx o DATA 5xx: `failed` (permanente).
+  - Corte durante `DATA`: `uncertain`.
+  - Algunos destinatarios rechazados y otros aceptados: `sent`, con los
+    rechazados en `smtp_response`.
+- Sin éxito ni permanente (o sin cuentas activas): `retrying` con
+  `RETRY_DELAYS_SECONDS` (default 60, 300, 900 s; pendiente de confirmar) y,
+  agotados los 3 reintentos, `failed`.
+- `sent` purga el contenido de sus adjuntos. `failed`/`uncertain` los
+  conservan para un reproceso manual (la cancelación por plazo es otro paso).
+- Bloqueo vencido en `sending` → `uncertain` con intento `worker_interrupted`.
+- Una conexión SMTP por mensaje (sin reutilizarla entre mensajes en v1).
+
+## Retención (2026-10-01)
+
+`app/services/retention_service.py`, ejecutada por el worker al arrancar y cada
+`RETENTION_INTERVAL_SECONDS` (600). Acuerdos: aviso a las 48 h y cancelación a
+las 72 h desde `last_attempt_at` de un mensaje `failed` o `uncertain`.
+
+1. Cancelación (primero): `cancelled`, `cancel_reason = expired`, adjuntos
+   purgados, `message.cancel` atribuido a `notificaciones.retention`.
+2. Aviso: un envío `failure_notice` por envío `standard` con mensajes en plazo,
+   `requester_email` y sin aviso previo; un correo al solicitante con el
+   formato acordado (texto y HTML escapado, máx. 20 mensajes listados, fechas
+   en `NOTICE_TIMEZONE`, enlace solo si `NOTICE_LINK_TEMPLATE` está
+   configurado). Los mensajes quedan con `notice_dispatch_id`.
+- Sin cuenta SMTP activa el aviso se pospone a la siguiente pasada.
+- Sin `requester_email` no hay aviso; la cancelación ocurre igual.
+- Un aviso fallido no genera otro aviso (solo se avisa de envíos `standard`).
+- Por pasada, hasta 500 mensajes por tarea (`FOR UPDATE SKIP LOCKED`).
+- Esperas de reintento confirmadas por el usuario: 60, 300 y 900 s.
 
 ## Pendientes de esta propuesta
 

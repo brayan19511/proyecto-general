@@ -5,9 +5,9 @@ import DataTable, { type Column } from '../../../shared/components/DataTable'
 import StatusBadge from '../../../shared/components/StatusBadge'
 import { errorMessage, useApi } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
-import { SCOPE_LABEL, permissionInfo } from '../permissionCatalog'
+import { SCOPE_LABEL, describePermission, withTexts } from '../permissionCatalog'
 import * as orgService from '../services/orgService'
-import type { Position, Role } from '../types'
+import type { Position, Role, RoleGrant } from '../types'
 import CodeNameFormModal from './CodeNameFormModal'
 import GrantModal from './GrantModal'
 import RolePositionsModal from './RolePositionsModal'
@@ -16,15 +16,20 @@ type Pending =
   | { kind: 'delete'; role: Role }
   | { kind: 'restore'; role: Role }
   | { kind: 'unassign'; role: Role; position: Position }
+  | { kind: 'revoke'; role: Role; grant: RoleGrant }
 
 const PENDING_TEXT: Record<Pending['kind'], { title: string; label: string; done: string }> = {
   delete: { title: 'Dar de baja el rol', label: 'Dar de baja', done: 'Rol dado de baja' },
   restore: { title: 'Restaurar rol', label: 'Restaurar', done: 'Rol restaurado' },
   unassign: { title: 'Desasignar rol', label: 'Desasignar', done: 'Rol desasignado del puesto' },
+  revoke: { title: 'Quitar permiso', label: 'Quitar', done: 'Permiso quitado del rol' },
 }
 
 function pendingMessage(p: Pending) {
   if (p.kind === 'restore') return `${p.role.name} vuelve a estar activo con sus permisos.`
+  if (p.kind === 'revoke') {
+    return `Quienes tengan un puesto con ${p.role.name} pierden ${describePermission(p.grant.permission).label} (${SCOPE_LABEL[p.grant.scope]}) desde su próxima solicitud, salvo que otro rol se lo dé.`
+  }
   if (p.kind === 'unassign') return `Quienes tengan el puesto ${p.position.name} dejan de recibir los permisos de ${p.role.name}.`
   return `${p.role.name} deja de estar disponible. Solo se puede si ningún puesto lo tiene. Se puede restaurar.`
 }
@@ -35,6 +40,7 @@ export default function RolesTab() {
   const [includeDeleted, setIncludeDeleted] = useState(false)
   const [search, setSearch] = useState('')
   const roles = useApi(() => orgService.listRoles(includeDeleted), [includeDeleted])
+  const catalog = useApi(() => orgService.listPermissionCatalog())
   const positions = useApi(() => orgService.listPositions())
   const activePositions = (positions.data ?? []).filter((p) => p.is_active)
   // Qué roles tiene cada puesto, para mostrar "en qué puestos está el rol".
@@ -59,12 +65,13 @@ export default function RolesTab() {
     try {
       if (pending.kind === 'delete') await orgService.deleteRole(pending.role.id)
       else if (pending.kind === 'restore') await orgService.restoreRole(pending.role.id)
+      else if (pending.kind === 'revoke') await orgService.revokePermission(pending.role.id, pending.grant.id)
       else await orgService.removePositionRole(pending.position.id, pending.role.id)
       toast.success(PENDING_TEXT[pending.kind].done)
       roles.reload()
       roleMap.reload()
     } catch (err) {
-      toast.error(errorMessage(err)) // 409 asignado a puestos
+      toast.error(errorMessage(err)) // 409 asignado a puestos, o la empresa quedaría sin administradores
     } finally {
       setBusy(false)
       setPending(null)
@@ -87,8 +94,15 @@ export default function RolesTab() {
         <div className="d-flex flex-wrap gap-1">
           {r.permissions.length === 0 && <span className="small text-body-secondary">Sin permisos</span>}
           {r.permissions.map((g) => (
-            <span key={g.id} className="badge text-bg-light border fw-normal" title={g.permission}>
-              {permissionInfo(g.permission)?.label ?? g.permission} · {SCOPE_LABEL[g.scope]}
+            <span key={g.id} className="badge text-bg-light border fw-normal d-inline-flex align-items-center gap-1" title={g.permission}>
+              {describePermission(g.permission).label} · {SCOPE_LABEL[g.scope]}
+              {r.is_active && (
+                <button type="button" className="btn btn-link p-0 lh-1 text-danger" title="Quitar este permiso del rol"
+                  aria-label={`Quitar ${describePermission(g.permission).label} de ${r.name}`}
+                  onClick={() => setPending({ kind: 'revoke', role: r, grant: g })}>
+                  <i className="bi bi-x-lg" aria-hidden="true" />
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -128,7 +142,8 @@ export default function RolesTab() {
       render: (r) =>
         r.is_active ? (
           <>
-            <button type="button" className="btn btn-sm btn-outline-primary me-1" onClick={() => setGrantFor(r)} title="Conceder permiso">
+            <button type="button" className="btn btn-sm btn-outline-primary me-1" onClick={() => setGrantFor(r)} title="Conceder permiso"
+              disabled={!catalog.data}>
               <i className="bi bi-key" aria-hidden="true" />
               <span className="visually-hidden">Conceder permiso a {r.name}</span>
             </button>
@@ -187,8 +202,8 @@ export default function RolesTab() {
           onSaved={() => roles.reload()}
         />
       )}
-      {grantFor && (
-        <GrantModal action={{ kind: 'grant', roleId: grantFor.id }} roles={[grantFor]}
+      {grantFor && catalog.data && (
+        <GrantModal action={{ kind: 'grant', roleId: grantFor.id }} roles={[grantFor]} catalog={withTexts(catalog.data)}
           onClose={() => setGrantFor(null)} onSaved={roles.reload} />
       )}
       {positionsFor && roleMap.data && (

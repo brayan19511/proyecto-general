@@ -67,6 +67,26 @@ class Settings(BaseSettings):
     # timeout en app/core/public_routes.py (p. ej. /libro-mayor/live-queries).
     LIBRO_MAYOR_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
 
+    # Notificaciones (/notificaciones/*). Mismo patrón que libro-mayor: apagado
+    # por defecto, también se apaga desde el panel sin reiniciar.
+    NOTIFICACIONES_ENABLED: bool = False
+    # Dirección INTERNA. Ejemplos: http://127.0.0.1:8010 (local),
+    # http://notificaciones.internal:8000 (Compose). Obligatoria si está habilitado.
+    NOTIFICACIONES_URL: str | None = Field(default=None, pattern=r"^https?://")
+    # Espera por defecto de sus rutas. POST /notificaciones/dispatches tiene la
+    # suya en app/core/public_routes.py (subida de adjuntos).
+    NOTIFICACIONES_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
+
+    # Pagos a proveedores (/pagos-proveedores/*). Mismo patrón: apagado por
+    # defecto, también se apaga desde el panel sin reiniciar.
+    PAGOS_PROVEEDORES_ENABLED: bool = False
+    # Dirección INTERNA. Ejemplos: http://127.0.0.1:8012 (local),
+    # http://pagos-proveedores.internal:8000 (Compose). Obligatoria si está habilitado.
+    PAGOS_PROVEEDORES_URL: str | None = Field(default=None, pattern=r"^https?://")
+    # Espera por defecto de sus rutas. Crear y enviar lotes tienen la suya en
+    # app/core/public_routes.py (lectura de PDFs con OCR y envío a notificaciones).
+    PAGOS_PROVEEDORES_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
+
     # Cada cuántos segundos la central relee de la base el estado de los
     # servicios (gateway.service_states). Un cambio desde la administración
     # aplica en todas las réplicas en ≤ este tiempo, sin reiniciar.
@@ -83,6 +103,10 @@ class Settings(BaseSettings):
             raise ValueError("Con AUTH_ENABLED=true falta AUTH_URL")
         if self.LIBRO_MAYOR_ENABLED and not self.LIBRO_MAYOR_URL:
             raise ValueError("Con LIBRO_MAYOR_ENABLED=true falta LIBRO_MAYOR_URL")
+        if self.NOTIFICACIONES_ENABLED and not self.NOTIFICACIONES_URL:
+            raise ValueError("Con NOTIFICACIONES_ENABLED=true falta NOTIFICACIONES_URL")
+        if self.PAGOS_PROVEEDORES_ENABLED and not self.PAGOS_PROVEEDORES_URL:
+            raise ValueError("Con PAGOS_PROVEEDORES_ENABLED=true falta PAGOS_PROVEEDORES_URL")
         return self
 
     # Las variables del proceso tienen prioridad sobre .env.

@@ -55,6 +55,9 @@ class CompanyPermissionsResponse(BaseModel):
     # Quién es (con Bearer o X-API-Key): así un consumidor valida identidad y
     # permisos en una sola llamada. Campo agregado de forma compatible.
     user_id: str
+    # Email del usuario (agregado de forma compatible, 2026-10-01): notificaciones
+    # lo guarda al crear un envío para avisarle de fallos. No está verificado.
+    email: str
     company: CompanyOut
     is_platform_admin: bool
     permissions: list[PermissionGrantOut]

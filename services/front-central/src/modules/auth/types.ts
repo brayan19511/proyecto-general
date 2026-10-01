@@ -34,6 +34,7 @@ export type PermissionGrant = {
 
 export type CompanyPermissions = {
   user_id: string
+  email: string
   company: Company
   is_platform_admin: boolean
   permissions: PermissionGrant[]

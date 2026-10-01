@@ -9,3 +9,5 @@
 **/*.db
 **/test-output/
 **/*.egg-info/
+# Constancias de pago reales para probar el lector de pagos-proveedores (RUC, cuentas, montos).
+services/pagos-proveedores/muestras/

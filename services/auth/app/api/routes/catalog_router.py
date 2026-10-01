@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user
 from app.core.db.connection import get_db
 from app.schemas.identity import CountryOut, DocumentTypeOut
+from app.schemas.role import PermissionCatalogOut
 from app.services.identity_service import IdentityService
+from app.services.permission_catalog import list_permission_catalog
 
 # Catálogos de solo lectura para cualquier usuario autenticado. Se cargan con
 # el seed (data.py); no tienen CRUD.
@@ -22,3 +24,10 @@ def list_document_types(
     db: Session = Depends(get_db),
 ):
     return IdentityService(db).list_document_types(country.upper() if country else None)
+
+
+@router.get("/permissions", response_model=list[PermissionCatalogOut], operation_id="listPermissionCatalog")
+def list_permissions(db: Session = Depends(get_db)):
+    """Todos los permisos que existen (fuente: app/core/permissions.py), con sus
+    alcances. Lo usan los clientes para mostrar siempre el catálogo completo."""
+    return list_permission_catalog(db)

@@ -33,4 +33,20 @@ PERMISSIONS: dict[str, list[str]] = {
     "ledger.view": ["company", "area"],
     "ledger.update": ["company"],
     "ledger.admin": ["company"],
+    # Servicio notificaciones (services/notificaciones). Cada nivel incluye al
+    # anterior (lo aplica notificaciones): view consulta envíos; send además los
+    # crea; retry además reprocesa y cancela; admin además cuentas SMTP y detalle
+    # técnico. own: solo los envíos que solicitó el usuario.
+    "notifications.view": ["company", "own"],
+    "notifications.send": ["company", "own"],
+    "notifications.retry": ["company", "own"],
+    "notifications.admin": ["company"],
+    # Servicio pagos-proveedores (services/pagos-proveedores). Los aplica ese
+    # servicio: view consulta proveedores y lotes; providers.manage además edita
+    # el maestro de proveedores; send además crea lotes y envía. Esas dos ramas no
+    # se incluyen entre sí. admin incluye todo.
+    "payments.view": ["company"],
+    "payments.providers.manage": ["company"],
+    "payments.send": ["company"],
+    "payments.admin": ["company"],
 }

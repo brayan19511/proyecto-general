@@ -188,7 +188,11 @@ Con `X-Company-Id`, devuelve los permisos efectivos del usuario en esa empresa (
 
 Catálogo de otros servicios (2026-09-30): `ledger.view` (company, area), `ledger.update` y `ledger.admin` (company) para libro-mayor. Los aplica libro-mayor; auth solo los guarda y los asigna por roles. Para crearlos en una base existente, volver a ejecutar el seed (crea los permisos nuevos del catálogo) y asignarlos con `POST /roles/{id}/permissions`.
 
-Acepta Bearer o `X-API-Key` (con API key la empresa es la de la clave). Incluye `user_id` (agregado de forma compatible, 2026-09-30): así otro servicio (libro-mayor) valida identidad y permisos en una sola llamada, también con API key (p. ej. Power BI).
+Catálogo de notificaciones (2026-10-01): `notifications.view`, `notifications.send` y `notifications.retry` (company, own) y `notifications.admin` (company). Los aplica notificaciones (cada nivel incluye al anterior). El seed asigna `notifications.admin` con alcance company al rol `ADMIN_EMPRESA`; en una base existente, volver a ejecutar el seed crea los permisos y esa asignación. Otros roles se asignan con `POST /roles/{id}/permissions`.
+
+Catálogo de pagos-proveedores (2026-10-01), todos con alcance company: `payments.view`, `payments.providers.manage`, `payments.send` y `payments.admin`. Los aplica pagos-proveedores: `providers.manage` y `send` incluyen `view` pero no se incluyen entre sí; `admin` incluye todo. El seed asigna `payments.admin` a `ADMIN_EMPRESA`.
+
+Acepta Bearer o `X-API-Key` (con API key la empresa es la de la clave). Incluye `user_id` (agregado de forma compatible, 2026-09-30): así otro servicio (libro-mayor) valida identidad y permisos en una sola llamada, también con API key (p. ej. Power BI). Incluye `email` (agregado de forma compatible, 2026-10-01): notificaciones lo guarda al crear un envío para el aviso de fallos; no está verificado.
 
 ### Pendiente
 
@@ -371,7 +375,7 @@ Las empresas no se eliminan (decisión del usuario): se desactivan. Así no hay 
 | Nivel | Alcance | Cómo se otorga |
 | --- | --- | --- |
 | Master admin | Toda la plataforma | Solo el seed (`is_platform_admin`) |
-| Admin de empresa | Toda su empresa | Puesto `ADMIN_EMPRESA` (área GER) con el rol del mismo nombre: los 5 permisos con alcance company. Puede haber varios |
+| Admin de empresa | Toda su empresa | Puesto `ADMIN_EMPRESA` (área GER) con el rol del mismo nombre: los permisos de gestión de auth con alcance company, `notifications.admin` y `payments.admin` (company). Puede haber varios |
 | Admin de área | Su área | Puestos `ADMIN_TI`, `ADMIN_CONT` (alcance area) |
 
 Por la regla de delegación, el puesto `ADMIN_EMPRESA` solo lo asigna el master u otro admin de empresa.
@@ -417,6 +421,7 @@ Los documentos no son una columna "dni": cada documento tiene un tipo, y cada ti
 | GET /admin/users/{id} | Solo master admin: cuenta, perfil, documentos, empresas (con puestos y roles) y sesiones activas de cualquier usuario, incluso inhabilitado |
 | GET /catalog/countries | Países del catálogo (cualquier usuario autenticado) |
 | GET /catalog/document-types?country=PE | Tipos de documento, opcionalmente de un país emisor |
+| GET /catalog/permissions | Catálogo de permisos (código, alcances y `loaded`: si ya está en la base o falta ejecutar el seed). Lo usa el front para mostrar todo permiso registrado |
 | GET /me/documents | Documentos propios |
 | POST /me/documents `{document_type_id, document_number, expires_at?}` | Registra uno por tipo. 422 formato inválido o vencimiento pasado · 409 ya tiene ese tipo |
 | DELETE /me/documents/{id} | Baja lógica; volver a registrar el tipo restaura la fila con el número nuevo |

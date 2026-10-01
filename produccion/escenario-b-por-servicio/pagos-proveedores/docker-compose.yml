@@ -1,0 +1,42 @@
+# Escenario B · pagos-proveedores. Lo despliega su equipo con su versión.
+#   docker compose up -d   (desde esta carpeta, con .env y pagos-proveedores.env)
+# Necesita: ../crear-redes.sh, la base, auth (tokens) y notificaciones (avisos).
+# Primera vez: después de notificaciones (cada *-migrate también migra el
+# schema audit; no correrlos a la vez).
+
+name: plataforma-pagos-proveedores
+
+x-pagos-proveedores: &pagos-proveedores
+  image: ${REGISTRY}/pagos-proveedores:${PAGOS_PROVEEDORES_VERSION}
+  env_file: pagos-proveedores.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    AUTH_URL: http://auth.internal:8000
+    # Directo a notificaciones (no por la central), con el token del usuario.
+    NOTIFICACIONES_URL: http://notificaciones.internal:8000
+    TRUSTED_PROXIES: '["172.34.0.0/24"]' # solo la central
+
+services:
+  pagos-proveedores-migrate:
+    <<: *pagos-proveedores
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  pagos-proveedores:
+    <<: *pagos-proveedores
+    networks:
+      plataforma-data:
+      plataforma-auth: # para llegar a auth.internal
+      plataforma-notificaciones: # para llegar a notificaciones.internal
+      plataforma-pagos-proveedores:
+        aliases: [pagos-proveedores.internal]
+    depends_on: { pagos-proveedores-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }
+  plataforma-notificaciones: { external: true }
+  plataforma-pagos-proveedores: { external: true }

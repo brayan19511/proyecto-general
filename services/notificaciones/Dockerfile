@@ -8,8 +8,8 @@
 # No incluye secretos: el .env se entrega al ejecutar (variables de entorno o
 # un archivo montado de solo lectura).
 #
-# Pendiente: cuando el servicio tenga Alembic, agregar
-# COPY services/notificaciones/migrations y alembic.ini junto al código.
+# Incluye migrations/ y alembic.ini para migrar desde el contenedor:
+#   python -m alembic upgrade head && python scripts/migrate_audit.py
 
 # Python 3.14: uuid.uuid7 está en la biblioteca estándar.
 FROM python:3.14-slim
@@ -30,6 +30,8 @@ RUN pip install -r requirements.txt
 
 # 2. Código del servicio.
 COPY services/notificaciones/app ./app
+COPY services/notificaciones/migrations ./migrations
+COPY services/notificaciones/alembic.ini ./alembic.ini
 COPY services/notificaciones/scripts ./scripts
 
 # Usuario sin privilegios: el proceso no corre como root.

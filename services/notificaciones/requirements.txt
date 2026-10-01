@@ -12,5 +12,9 @@ python-multipart>=0.0.20,<0.1
 email-validator>=2.2,<3
 # Cifrado de las contraseñas SMTP (Fernet / MultiFernet).
 cryptography>=44,<51
+# Plantillas de correo (asunto y cuerpo con variables y bucles), en modo sandbox.
+jinja2>=3.1,<4
+# Base de zonas horarias (NOTICE_TIMEZONE): Windows y la imagen slim no traen una del sistema.
+tzdata>=2025.1
 # Paquete compartido de logs (schema audit). Ruta relativa: ejecutar pip desde la carpeta del servicio.
 -e ../../packages/platform-audit

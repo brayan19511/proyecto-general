@@ -1,19 +1,39 @@
-from fastapi import APIRouter, FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from platform_audit import AuditConfig, AuditMiddleware
 
-from app.api.routes import health_router
+from app.api.routes import (
+    dispatches_router,
+    health_router,
+    messages_router,
+    seed_router,
+    smtp_accounts_router,
+    templates_router,
+)
+from app.clients.auth_client import auth_client
 from app.core.audit import SENSITIVE_KEY_PARTS, SENSITIVE_KEYS
 from app.core.config import settings
 from app.core.db.connection import engine
+from app.services.errors import ServiceError
 
 # Todo el servicio vive bajo su prefijo: la misma ruta directo y a través de la
 # API central (que reenvía /<servicio>/* sin reescribir).
 PREFIX = "/notificaciones"
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    auth_client.close()  # Libera las conexiones hacia auth al apagar.
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    lifespan=lifespan,
     docs_url=f"{PREFIX}/docs",
     redoc_url=f"{PREFIX}/redoc",
     openapi_url=f"{PREFIX}/openapi.json",
@@ -25,7 +45,7 @@ app.add_middleware(
     # Sin cookies: las credenciales viajan en headers.
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Company-Id", "Idempotency-Key"],
 )
 
 # Logs de cada solicitud en el schema audit (paquete compartido platform_audit).
@@ -49,7 +69,24 @@ app.add_middleware(
     ),
 )
 
+@app.exception_handler(ServiceError)
+def service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
+    """Errores de negocio (app/services/errors.py) → {"detail", "code"?, ...extra} con su status."""
+    content = {"detail": str(exc)}
+    if exc.code is not None:
+        content["code"] = exc.code
+    content.update(exc.extra)
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+
 api = APIRouter(prefix=PREFIX)
 api.include_router(health_router.router)
+api.include_router(smtp_accounts_router.router)
+api.include_router(dispatches_router.router)
+api.include_router(messages_router.router)
+api.include_router(templates_router.router)
+if settings.SEED_ENABLED:
+    # Carga inicial: la ruta solo existe mientras SEED_ENABLED=true.
+    api.include_router(seed_router.router)
 
 app.include_router(api)

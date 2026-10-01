@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vista previa de correo</title>
+    <!--
+      Vista previa del cuerpo HTML de un correo. El front la abre en un
+      <iframe sandbox="allow-scripts"> sin allow-same-origin: corre en un origen
+      opaco propio, sin acceso a la sesión del front. nginx la sirve con su
+      propia CSP (estilos en línea sí; scripts solo este, por su hash: en un
+      origen opaco 'self' no coincide con nada). Si se edita el script,
+      actualizar su sha256 en nginx/email-preview-headers.inc.template
+      (el navegador lo informa en la consola si no coincide). Solo ASCII dentro
+      del script, para que el hash no dependa de la codificación.
+    -->
+    <script>// Recibe el HTML del correo desde el front (postMessage) y lo muestra.
+// - Solo acepta un mensaje y solo de la ventana que la contiene.
+// - DOMParser no ejecuta los scripts del correo y la CSP de esta pagina
+//   bloquea scripts en linea, atributos on* y enlaces javascript:.
+// - Los clics en enlaces no navegan: el marco no puede salir de esta pagina.
+;(function () {
+  var received = false
+
+  window.addEventListener('message', function (event) {
+    if (received || event.source !== window.parent) return
+    var data = event.data
+    if (!data || data.type !== 'email-preview' || typeof data.html !== 'string') return
+    received = true
+    var doc = new DOMParser().parseFromString(data.html, 'text/html')
+    document.replaceChild(document.adoptNode(doc.documentElement), document.documentElement)
+  })
+
+  document.addEventListener(
+    'click',
+    function (event) {
+      var target = event.target
+      if (target && target.closest && target.closest('a, area, form')) event.preventDefault()
+    },
+    true,
+  )
+  document.addEventListener('submit', function (event) { event.preventDefault() }, true)
+
+  // Avisa que esta lista; el front responde una sola vez con el HTML.
+  window.parent.postMessage({ type: 'email-preview-ready' }, '*')
+})()
+</script>
+  </head>
+  <body></body>
+</html>

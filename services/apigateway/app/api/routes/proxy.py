@@ -40,15 +40,21 @@ router = APIRouter(tags=["proxy"])
 # Headers que pasan del cliente al servicio (lista positiva). Cookie, Host y
 # otros no se reenvían. X-Forwarded-For y la traza los arma la central.
 # X-Seed-Token solo lo usa auth (bootstrap); para los demás no tiene efecto.
+# Idempotency-Key: la usa notificaciones para no duplicar envíos al reintentar.
 REQUEST_HEADERS = (
     "content-type", "accept", "accept-encoding", "authorization", "x-company-id", "x-api-key",
-    "x-seed-token", "user-agent",
+    "x-seed-token", "idempotency-key", "user-agent",
 )
 # Headers que pasan del servicio al cliente. Content-Encoding y Content-Length
 # describen los bytes tal como llegan (sin descomprimir); Content-Disposition
-# lleva el nombre del archivo en descargas (CSV). X-Trace-Id lo agrega el
-# middleware de la central (es la misma traza).
-RESPONSE_HEADERS = ("content-type", "content-encoding", "content-length", "content-disposition", "retry-after")
+# lleva el nombre del archivo en descargas (CSV, adjuntos). X-Content-Type-Options
+# y Cache-Control son de seguridad: que el navegador no reinterprete un archivo
+# descargado ni guarde copias de documentos con datos personales. X-Trace-Id lo
+# agrega el middleware de la central (es la misma traza).
+RESPONSE_HEADERS = (
+    "content-type", "content-encoding", "content-length", "content-disposition", "retry-after",
+    "x-content-type-options", "cache-control",
+)
 
 
 def find_route(info: services.ServiceInfo, method: str, path: str) -> Route | None:

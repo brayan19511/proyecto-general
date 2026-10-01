@@ -83,3 +83,47 @@ LIBRO_MAYOR_ROUTES: tuple[Route, ...] = (
     # Carga inicial: libro-mayor solo registra la ruta con SEED_ENABLED=true.
     Route("/libro-mayor/admin/seed", POST),
 )
+
+# Acuerdo (2026-10-01): todo salvo health y ready. Los permisos los valida
+# notificaciones con auth (notifications.view/send/retry/admin).
+NOTIFICACIONES_ROUTES: tuple[Route, ...] = (
+    # Documentación.
+    Route("/notificaciones/docs", READ),
+    Route("/notificaciones/redoc", READ),
+    Route("/notificaciones/openapi.json", READ),
+    # Cuentas SMTP de la empresa (incluye /restore y /test). POST /{id}/test espera
+    # al servidor SMTP hasta timeout_seconds de la cuenta (máx. 120): la central
+    # espera un poco más para no cortarlo antes.
+    Route("/notificaciones/smtp-accounts", POST, timeout=130),
+    Route("/notificaciones/smtp-accounts", WRITE),
+    # Crear envíos: multipart con adjuntos (hasta 100 MB por el borde) y 500
+    # mensajes que se validan y arman antes de responder. Más que los 30 s por
+    # defecto; si se corta, el consumidor reintenta con la misma Idempotency-Key.
+    Route("/notificaciones/dispatches", POST, timeout=120),
+    # Consultas de envíos y mensajes; reproceso y cancelación (paso posterior).
+    Route("/notificaciones/dispatches", WRITE),
+    Route("/notificaciones/messages", WRITE),
+    # Plantillas generales (incluye /restore y /preview).
+    Route("/notificaciones/templates", WRITE),
+    # Carga inicial: notificaciones solo registra la ruta con SEED_ENABLED=true.
+    Route("/notificaciones/admin/seed", POST),
+)
+
+# Todo salvo health y ready (mismo criterio que notificaciones). Los permisos
+# los valida pagos-proveedores con auth (payments.view/providers.manage/send/admin).
+PAGOS_PROVEEDORES_ROUTES: tuple[Route, ...] = (
+    # Documentación.
+    Route("/pagos-proveedores/docs", READ),
+    Route("/pagos-proveedores/redoc", READ),
+    Route("/pagos-proveedores/openapi.json", READ),
+    # Maestro de proveedores (incluye /restore).
+    Route("/pagos-proveedores/providers", WRITE),
+    # Crear un lote lee hasta 100 PDFs (con OCR si son escaneados, varios segundos
+    # cada uno) y enviarlo espera a notificaciones (hasta 120 s): el máximo
+    # admitido. Si se corta, el lote sigue en la base (se consulta o se reenvía).
+    Route("/pagos-proveedores/batches", POST, timeout=300),
+    # Consultas, descargas (constancia y ZIP), quitar archivos y descartar.
+    Route("/pagos-proveedores/batches", WRITE),
+    # Configuración de la empresa (plantilla por defecto; cambiarla: payments.admin).
+    Route("/pagos-proveedores/settings", WRITE),
+)

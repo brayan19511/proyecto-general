@@ -26,6 +26,12 @@ COMPANY_ADMIN_PERMISSIONS = [
     ("memberships.manage", "company"),
     ("users.read", "company"),
     ("history.read", "company"),
+    # notificaciones: admin incluye view, send y retry (lo aplica ese servicio).
+    # En una base existente, volver a ejecutar POST /seed lo agrega al rol
+    # ADMIN_EMPRESA; si después se retira del rol, el seed no lo restituye.
+    ("notifications.admin", "company"),
+    # pagos-proveedores: admin incluye ver, editar proveedores y enviar.
+    ("payments.admin", "company"),
 ]
 
 # Catálogo de países (ISO 3166-1 alfa-2). Para admitir otro país basta con

@@ -19,7 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db.connection import engine
-from app.core.public_routes import AUTH_ROUTES, LIBRO_MAYOR_ROUTES, Route
+from app.core.public_routes import (
+    AUTH_ROUTES,
+    LIBRO_MAYOR_ROUTES,
+    NOTIFICACIONES_ROUTES,
+    PAGOS_PROVEEDORES_ROUTES,
+    Route,
+)
 from app.models.entities import ServiceState
 
 @dataclass(frozen=True)
@@ -48,6 +54,16 @@ SERVICES: dict[str, ServiceInfo] = {
         "libro-mayor", enabled_by_config=settings.LIBRO_MAYOR_ENABLED, panel_managed=True,
         prefix="/libro-mayor", url=settings.LIBRO_MAYOR_URL, timeout=settings.LIBRO_MAYOR_TIMEOUT_SECONDS,
         routes=LIBRO_MAYOR_ROUTES,
+    ),
+    "notificaciones": ServiceInfo(
+        "notificaciones", enabled_by_config=settings.NOTIFICACIONES_ENABLED, panel_managed=True,
+        prefix="/notificaciones", url=settings.NOTIFICACIONES_URL, timeout=settings.NOTIFICACIONES_TIMEOUT_SECONDS,
+        routes=NOTIFICACIONES_ROUTES,
+    ),
+    "pagos-proveedores": ServiceInfo(
+        "pagos-proveedores", enabled_by_config=settings.PAGOS_PROVEEDORES_ENABLED, panel_managed=True,
+        prefix="/pagos-proveedores", url=settings.PAGOS_PROVEEDORES_URL,
+        timeout=settings.PAGOS_PROVEEDORES_TIMEOUT_SECONDS, routes=PAGOS_PROVEEDORES_ROUTES,
     ),
 }
 

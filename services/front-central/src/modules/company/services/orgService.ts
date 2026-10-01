@@ -1,4 +1,5 @@
 import { apiRequest } from '../../../shared/api/apiClient'
+import type { CatalogPermission } from '../permissionCatalog'
 import type { Area, Position, PositionRole, Role } from '../types'
 
 // Áreas, puestos y roles de la empresa activa (X-Company-Id). Leer: cualquier
@@ -107,4 +108,9 @@ export async function listPositionRolesMap(positions: Position[]) {
   }
   await Promise.all(Array.from({ length: 6 }, worker))
   return map
+}
+
+// Catálogo completo de permisos (lo que auth tenga registrado), con sus alcances.
+export function listPermissionCatalog() {
+  return apiRequest<CatalogPermission[]>('/auth/catalog/permissions')
 }

@@ -3,16 +3,19 @@ import AsyncState from '../../../shared/components/AsyncState'
 import ConfirmDialog from '../../../shared/components/ConfirmDialog'
 import { errorMessage, useApi } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
-import { PERMISSIONS, SCOPE_LABEL, type PermissionInfo } from '../permissionCatalog'
+import { SCOPE_LABEL, withTexts, type PermissionInfo } from '../permissionCatalog'
 import * as orgService from '../services/orgService'
 import type { Role, RoleGrant } from '../types'
 import GrantModal, { type GrantAction } from './GrantModal'
 
-// Permisos: el catálogo lo define auth (no se crean ni borran permisos); aquí se
-// ve quién tiene cada uno y se concede, cambia de alcance o quita por rol.
+// Permisos: el catálogo lo define auth (no se crean ni borran permisos) y se
+// pide a auth, así aparece todo permiso registrado; aquí se ve quién tiene cada
+// uno y se concede, cambia de alcance o quita por rol.
 export default function PermissionsTab() {
   const [search, setSearch] = useState('')
   const roles = useApi(() => orgService.listRoles())
+  const catalog = useApi(() => orgService.listPermissionCatalog())
+  const permissions = withTexts(catalog.data ?? [])
   const [grant, setGrant] = useState<GrantAction | null>(null)
   const [toRevoke, setToRevoke] = useState<{ role: Role; grant: RoleGrant } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -22,7 +25,7 @@ export default function PermissionsTab() {
     activeRoles.flatMap((role) => role.permissions.filter((g) => g.permission === p.code).map((g) => ({ role, grant: g })))
 
   const term = search.trim().toLowerCase()
-  const visible = PERMISSIONS.filter(
+  const visible = permissions.filter(
     (p) => !term || `${p.label} ${p.code} ${p.description} ${holders(p).map((h) => h.role.name).join(' ')}`.toLowerCase().includes(term),
   )
   const groups = [...new Set(visible.map((p) => p.group))]
@@ -48,11 +51,14 @@ export default function PermissionsTab() {
         <input className="form-control form-control-sm" style={{ maxWidth: 320 }} placeholder="Buscar permiso o rol…"
           aria-label="Buscar permisos" value={search} onChange={(e) => setSearch(e.target.value)} />
         <span className="small text-body-secondary">
-          El catálogo de permisos lo define el sistema; aquí decides qué roles los tienen y con qué alcance.
+          {permissions.length > 0 && `${permissions.length} permisos registrados. `}
+          Cada permiso existe porque un servicio lo comprueba en su código: se agregan en auth junto con ese
+          servicio (y su seed), no desde aquí. Aquí decides qué roles los tienen y con qué alcance.
         </span>
       </div>
 
-      <AsyncState loading={roles.loading} error={roles.error} onRetry={roles.reload} hasData={roles.data !== undefined}>
+      <AsyncState loading={roles.loading || catalog.loading} error={roles.error ?? catalog.error}
+        onRetry={() => { roles.reload(); catalog.reload() }} hasData={roles.data !== undefined && catalog.data !== undefined}>
         {groups.length === 0 && <p className="text-body-secondary">Ningún permiso coincide con la búsqueda.</p>}
         {groups.map((group) => (
           <div key={group} className="mb-4">
@@ -66,7 +72,14 @@ export default function PermissionsTab() {
                   {visible.filter((p) => p.group === group).map((p) => (
                     <tr key={p.code}>
                       <td style={{ minWidth: 260 }}>
-                        <div>{p.label}</div>
+                        <div>
+                          {p.label}
+                          {!p.loaded && (
+                            <span className="badge text-bg-warning fw-normal ms-2" title="Está en auth pero no en su base: ejecuta el seed de auth para poder concederlo.">
+                              Falta ejecutar el seed
+                            </span>
+                          )}
+                        </div>
                         <div className="small text-body-secondary"><span className="font-monospace">{p.code}</span> · {p.description}</div>
                       </td>
                       <td className="small text-nowrap">{p.scopes.map((s) => SCOPE_LABEL[s]).join(', ')}</td>
@@ -82,14 +95,16 @@ export default function PermissionsTab() {
                                   <i className="bi bi-pencil" style={{ fontSize: '0.7rem' }} aria-hidden="true" />
                                 </button>
                               )}
-                              <button type="button" className="btn-close" style={{ fontSize: '0.5rem' }}
-                                aria-label={`Quitar a ${role.name}`} onClick={() => setToRevoke({ role, grant: g })} />
+                              <button type="button" className="btn btn-link p-0 lh-1 text-danger" title="Quitar este permiso del rol"
+                                aria-label={`Quitar a ${role.name}`} onClick={() => setToRevoke({ role, grant: g })}>
+                                <i className="bi bi-x-lg" aria-hidden="true" />
+                              </button>
                             </span>
                           ))}
                         </div>
                       </td>
                       <td className="text-end">
-                        <button type="button" className="btn btn-sm btn-outline-primary text-nowrap" disabled={activeRoles.length === 0}
+                        <button type="button" className="btn btn-sm btn-outline-primary text-nowrap" disabled={activeRoles.length === 0 || !p.loaded}
                           onClick={() => setGrant({ kind: 'grant', permission: p.code })}>
                           <i className="bi bi-plus-lg me-1" aria-hidden="true" />
                           Conceder
@@ -104,7 +119,7 @@ export default function PermissionsTab() {
         ))}
       </AsyncState>
 
-      {grant && <GrantModal action={grant} roles={activeRoles} onClose={() => setGrant(null)} onSaved={roles.reload} />}
+      {grant && <GrantModal action={grant} roles={activeRoles} catalog={permissions} onClose={() => setGrant(null)} onSaved={roles.reload} />}
 
       <ConfirmDialog
         open={toRevoke !== null}

@@ -1,7 +1,7 @@
 # edge (proxy de borde)
 
 Caddy como única entrada desde la red: HTTP en la red local o HTTPS con
-dominio, límite de 100 MB por solicitud y reenvío por prefijo (`/auth`, `/libro-mayor`, `/gateway` → la central; el resto
+dominio, límite de 100 MB por solicitud y reenvío por prefijo (`/auth`, `/libro-mayor`, `/notificaciones`, `/pagos-proveedores`, `/gateway` → la central; el resto
 → el front; `:8443` → pgAdmin). No es un API Gateway: no tiene reglas,
 autorización ni coordinación (ver `docs/arquitectura.md`).
 

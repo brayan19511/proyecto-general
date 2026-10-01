@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+  <body style="font-family: Arial, sans-serif; color: #202124; line-height: 1.45;">
+    <p>Buenas tardes,</p>
+
+    {% if mensaje %}
+    <p>{{ mensaje }}</p>
+    {% endif %}
+
+    <p>Adjunto la constancia del pago realizado:</p>
+
+    <table cellpadding="3" cellspacing="0" style="border-collapse: collapse; min-width: 240px;">
+      <thead>
+        <tr>
+          <th align="left" style="border-bottom: 1px solid #202124;">Documento</th>
+          <th align="right" style="border-bottom: 1px solid #202124;">Pago total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pago in pagos %}
+        <tr>
+          <td>{{  pago.suggested_filename or pago.archivo }}</td>
+          <td align="right">{{ pago.moneda_simbolo or pago.moneda }} {{ pago.monto_decimal }}</td>
+        </tr>
+        {% endfor %}
+        {% for total in totales %}
+        <tr>
+          <td align="right" style="border-top: 1px solid #202124; font-weight: bold;">
+            {{ total.moneda_simbolo or total.moneda }}
+          </td>
+          <td align="right" style="border-top: 1px solid #202124; font-weight: bold;">
+            {{ total.total }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p>cualquier duda o consulta enviar correo a tesoreria@rashperu.com</p>
+    <p>Saludos.</p>
+  </body>
+</html>

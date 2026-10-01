@@ -17,6 +17,19 @@ export const LEDGER_VIEW = ['ledger.view', 'ledger.update', 'ledger.admin']
 export const LEDGER_UPDATE = ['ledger.update', 'ledger.admin'] // reglas, categorías, reclasificar
 export const LEDGER_ADMIN = ['ledger.admin'] // cuentas, sincronización manual, homologación
 
+// Notificaciones (correo): cada nivel incluye al anterior.
+export const NOTIFICATIONS_VIEW = ['notifications.view', 'notifications.send', 'notifications.retry', 'notifications.admin']
+export const NOTIFICATIONS_SEND = ['notifications.send', 'notifications.retry', 'notifications.admin']
+export const NOTIFICATIONS_RETRY = ['notifications.retry', 'notifications.admin'] // reprocesar y cancelar
+export const NOTIFICATIONS_ADMIN = ['notifications.admin'] // cuentas SMTP, plantillas, intentos
+
+// Pago a proveedores: ver lo da cualquiera; gestionar proveedores y enviar son
+// independientes entre sí; admin incluye todo.
+export const PAYMENTS_VIEW = ['payments.view', 'payments.providers.manage', 'payments.send', 'payments.admin']
+export const PAYMENTS_MANAGE = ['payments.providers.manage', 'payments.admin']
+export const PAYMENTS_SEND = ['payments.send', 'payments.admin'] // lotes, ZIP y envío
+export const PAYMENTS_ADMIN = ['payments.admin'] // además elegir la plantilla del envío
+
 export function canAccess(
   rule: AccessRule,
   isPlatformAdmin: boolean,
@@ -26,6 +39,13 @@ export function canAccess(
   if (rule === 'authenticated') return true
   if (rule === 'platformAdmin') return false
   return permissions.some((p) => rule.anyOf.includes(p.code))
+}
+
+// ¿Alguno de esos permisos vale en toda la empresa (no solo área o propio)?
+export function useHasCompanyScope(codes: string[]): boolean {
+  const isPlatformAdmin = useSessionStore((s) => s.me?.is_platform_admin ?? false)
+  const permissions = useSessionStore((s) => s.permissions)
+  return isPlatformAdmin || permissions.some((p) => p.company && codes.includes(p.code))
 }
 
 // Hook para componentes: devuelve una función que evalúa reglas con la sesión actual.

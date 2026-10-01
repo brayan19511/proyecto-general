@@ -1,0 +1,14 @@
+# Cabeceras de la vista previa de correos (/email-preview.html). El front la abre
+# en un iframe sandbox sin allow-same-origin (origen opaco). El HTML del correo
+# trae estilos en línea: se admiten aquí, nunca en la app. Scripts solo el
+# de public/email-preview.html, por su hash (sin otros en línea, on* ni
+# javascript:); imágenes solo data:
+# (las externas permitirían rastrear quién abrió el correo); sin formularios
+# ni conexiones. Sin frame-ancestors ni X-Frame-Options: en el origen opaco
+# 'self' no coincide con el front y el marco no cargaría. La página no tiene
+# datos propios (solo pinta lo que le envía quien la contiene), así que
+# enmarcarla desde otro sitio no expone nada.
+add_header Content-Security-Policy "default-src 'none'; script-src 'sha256-wZJuSnP0xb05h26TgnrGybFgRW3yu4oYIw11OQ5qjtQ='; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header Cache-Control "no-cache" always;

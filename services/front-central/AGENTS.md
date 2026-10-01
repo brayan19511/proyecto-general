@@ -81,15 +81,39 @@ detrás del proxy de borde (caddy), que sirve front y API en el mismo origen
 admite scripts ni estilos en `<style>`/HTML en línea: no agregarlos (los
 `style={...}` de React sí funcionan).
 Pendiente técnico: el build supera 500 kB en un solo archivo; dividir con
-`React.lazy` por módulo cuando convenga. El catálogo es una copia de
-`services/auth/app/core/permissions.py` en `company/permissionCatalog.ts`
-(auth valida con 422): al agregar un permiso en auth, agregarlo ahí. Importes con BigInt
+`React.lazy` por módulo cuando convenga. Permisos: la lista sale de auth
+(`GET /auth/catalog/permissions`), así se ve todo lo registrado;
+`company/permissionCatalog.ts` solo aporta textos en español (un permiso sin
+texto se muestra con su código y agrupado por prefijo) y `loaded=false` avisa
+que falta ejecutar el seed de auth. Importes con BigInt
 (`shared/utils/decimal.ts`), nunca float. Monitoreo › Actividad y logs
 (`modules/monitoring`, solo platform admin): una pestaña por servicio
 (`/monitoreo/logs/:service`, contrato de platform-audit), filtros y atajos,
 detalle con datos enmascarados y pasos, y traza completa por `trace_id`
 consultando cada servicio (nunca leyendo filas de otro). Pendientes de Libro
 mayor en `docs/alcance.md`.
+Mi perfil › API keys (`profile/apiKeys.ts`, `ApiKeysTab`): keys propias en la
+empresa activa con permisos elegidos entre los del usuario, vencimiento,
+secreto mostrado una sola vez y revocación (irreversible). Hoy solo
+libro-mayor acepta `X-API-Key`.
+Tesorería (como en proyecto-08): pagos a proveedores (`modules/payments`:
+lotes de constancias, grupos por proveedor, registrar proveedor o correo
+faltante desde el lote, ZIP, enviar y estado de entrega; aviso de pago ya
+enviado por mismo PDF o mismos datos; elegir plantilla solo `payments.admin`)
+y "Correos enviados" (`DispatchesPage` con `consumer="pagos-proveedores"`:
+cada módulo ve solo sus correos, con filtro por solicitante y "solo los míos").
+El filtro por origen es presentación: quién ve qué lo decide notificaciones
+con `notifications.view` (empresa: todos; propio: los suyos) (acuerdo
+2026-10-01: restringir solo con permisos). Cuentas SMTP y plantillas de
+correo están en Plataforma (solo platform admin; de la empresa activa).
+El HTML de un correo solo se muestra con `HtmlPreview`: `public/email-preview.html`
+en `<iframe sandbox="allow-scripts">` sin allow-same-origin (origen opaco) con
+CSP propia en nginx (`email-preview-headers.inc.template`: estilos en línea sí,
+scripts solo el suyo por sha256). Si se edita su script, recalcular el hash
+(solo ASCII dentro del script; el archivo va con LF por `.gitattributes`).
+Rutas del front: nunca empezar por `/auth`, `/libro-mayor`, `/notificaciones`,
+`/pagos-proveedores` ni `/gateway` (el borde las envía a la API); por eso son
+`/tesoreria/*`.
 Tras editar archivos, si el front muestra código viejo, reiniciar `npm run dev`
 (el watcher de Vite en Windows a veces no detecta cambios).
 Se avanza un paso pequeño por vez según el AGENTS.md raíz. El usuario autorizó

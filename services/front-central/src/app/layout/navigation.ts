@@ -1,4 +1,10 @@
-import { LEDGER_ADMIN, LEDGER_VIEW, type AccessRule } from '../../shared/auth/access'
+import {
+  LEDGER_ADMIN,
+  LEDGER_VIEW,
+  NOTIFICATIONS_VIEW,
+  PAYMENTS_VIEW,
+  type AccessRule,
+} from '../../shared/auth/access'
 
 // Menú lateral. Cada grupo es un módulo; cada ítem, una ruta con la regla que
 // decide si se muestra (la misma regla protege la ruta en router.tsx).
@@ -33,6 +39,17 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Como en proyecto-08 (Finanzas › Tesorería): pagos a proveedores y sus
+    // correos. Rutas /tesoreria: /notificaciones/* y /pagos-proveedores/* los
+    // envía el borde a la API.
+    label: 'Tesorería',
+    items: [
+      { label: 'Pagos a proveedores', path: '/tesoreria/pagos', icon: 'cash-stack', access: { anyOf: PAYMENTS_VIEW } },
+      { label: 'Proveedores', path: '/tesoreria/proveedores', icon: 'building', access: { anyOf: PAYMENTS_VIEW } },
+      { label: 'Correos enviados', path: '/tesoreria/correos', icon: 'envelope-arrow-up', access: { anyOf: NOTIFICATIONS_VIEW } },
+    ],
+  },
+  {
     label: 'Empresa',
     items: [
       { label: 'Miembros', path: '/empresa/miembros', icon: 'people', access: 'platformAdmin' },
@@ -52,6 +69,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Usuarios', path: '/plataforma/usuarios', icon: 'person-gear', access: 'platformAdmin' },
       { label: 'Servicios', path: '/plataforma/servicios', icon: 'hdd-network', access: 'platformAdmin' },
       { label: 'IPs bloqueadas', path: '/plataforma/ips', icon: 'shield-x', access: 'platformAdmin' },
+      // Correo de la empresa activa, común a todos los módulos (acuerdo 2026-10-01:
+      // solo administrador por ahora; a futuro quizá un rol de administrador de TI).
+      { label: 'Cuentas SMTP', path: '/plataforma/cuentas-smtp', icon: 'hdd-stack', access: 'platformAdmin' },
+      { label: 'Plantillas de correo', path: '/plataforma/plantillas', icon: 'file-earmark-richtext', access: 'platformAdmin' },
     ],
   },
 ]

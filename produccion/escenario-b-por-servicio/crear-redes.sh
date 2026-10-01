@@ -1,7 +1,7 @@
 #!/bin/sh
 # Redes compartidas entre los composes del escenario B (una vez por servidor).
-# Mismas subredes que en desarrollo: auth, libro-mayor y la central confían en
-# ellas por TRUSTED_PROXIES. Idempotente: no toca las que ya existen.
+# Mismas subredes que en desarrollo: auth, libro-mayor, notificaciones,
+# pagos-proveedores y la central confían en ellas por TRUSTED_PROXIES. Idempotente: no toca las que ya existen.
 set -e
 
 crear() { # nombre [opciones de docker network create]
@@ -19,3 +19,5 @@ crear plataforma-data --internal                                  # la base
 crear plataforma-auth --internal --subnet 172.30.0.0/24           # central ↔ auth
 crear plataforma-libro-mayor --internal --subnet 172.31.0.0/24    # central ↔ libro-mayor
 crear plataforma-proxy --internal --subnet 172.32.0.0/24          # caddy ↔ central, front, pgAdmin
+crear plataforma-notificaciones --internal --subnet 172.33.0.0/24 # central y pagos-proveedores ↔ notificaciones
+crear plataforma-pagos-proveedores --internal --subnet 172.34.0.0/24 # central ↔ pagos-proveedores

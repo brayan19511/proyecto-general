@@ -1,0 +1,50 @@
+# Escenario B · notificaciones (API + worker). Lo despliega su equipo con su versión.
+#   docker compose up -d   (desde esta carpeta, con .env y notificaciones.env)
+# Necesita: ../crear-redes.sh, la base y auth (para validar tokens).
+# Primera vez: después de libro-mayor (cada *-migrate también migra el schema
+# audit; no correrlos a la vez).
+
+name: plataforma-notificaciones
+
+x-notificaciones: &notificaciones
+  image: ${REGISTRY}/notificaciones:${NOTIFICACIONES_VERSION}
+  env_file: notificaciones.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    AUTH_URL: http://auth.internal:8000
+    TRUSTED_PROXIES: '["172.33.0.0/24"]' # solo la central y pagos-proveedores
+
+services:
+  notificaciones-migrate:
+    <<: *notificaciones
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  notificaciones:
+    <<: *notificaciones
+    networks:
+      plataforma-data:
+      plataforma-auth: # para llegar a auth.internal
+      smtp-egress: # probar cuentas SMTP
+      plataforma-notificaciones:
+        aliases: [notificaciones.internal]
+    depends_on: { notificaciones-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+  # Envía los pendientes, reintenta y aplica la retención. Siempre levantado.
+  notificaciones-worker:
+    <<: *notificaciones
+    command: ["python", "-m", "app.worker"]
+    networks: [plataforma-data, smtp-egress]
+    healthcheck: { disable: true } # el HEALTHCHECK de la imagen es el de la API
+    stop_grace_period: 2m # termina el mensaje en curso al detenerse
+    depends_on: { notificaciones-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }
+  plataforma-notificaciones: { external: true }
+  smtp-egress: # propia de este compose: salida hacia los servidores SMTP

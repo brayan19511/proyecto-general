@@ -27,7 +27,8 @@ export class ApiError extends Error {
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
-  body?: unknown
+  body?: unknown // JSON, o FormData para multipart (el navegador pone el boundary)
+  headers?: Record<string, string> // p. ej. Idempotency-Key
   auth?: boolean // false en login y refresh: no llevan Bearer
   companyId?: string // otra empresa que la activa (p. ej. al validar un cambio)
 }
@@ -58,9 +59,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 // Archivo (CSV, etc.): el contenido y el nombre que propone el servidor.
 export async function apiDownload(path: string): Promise<{ blob: Blob; filename: string | null }> {
   const response = await request(path, {})
-  const disposition = response.headers.get('Content-Disposition') ?? ''
-  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? null
-  return { blob: await response.blob(), filename }
+  return { blob: await response.blob(), filename: dispositionFilename(response.headers.get('Content-Disposition') ?? '') }
+}
+
+// filename*=UTF-8''... (con tildes y ñ, RFC 6266) si viene; si no, filename="...".
+function dispositionFilename(disposition: string): string | null {
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      // mal codificado: se usa el nombre simple
+    }
+  }
+  return /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? null
 }
 
 async function request(path: string, options: RequestOptions): Promise<Response> {
@@ -81,9 +93,10 @@ async function request(path: string, options: RequestOptions): Promise<Response>
   return response
 }
 
-async function send(path: string, { method = 'GET', body, auth = true, companyId }: RequestOptions) {
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+async function send(path: string, { method = 'GET', body, headers: extra, auth = true, companyId }: RequestOptions) {
+  const multipart = body instanceof FormData
+  const headers: Record<string, string> = { Accept: 'application/json', ...extra }
+  if (body !== undefined && !multipart) headers['Content-Type'] = 'application/json'
 
   const token = auth ? getAccessToken() : null
   if (token) headers.Authorization = `Bearer ${token}`
@@ -95,7 +108,7 @@ async function send(path: string, { method = 'GET', body, auth = true, companyId
     return await fetch(`${API_URL}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'No se pudo conectar con el servidor. Revisa tu conexión.')

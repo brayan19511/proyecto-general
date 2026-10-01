@@ -1,0 +1,20 @@
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic-settings==2.15.0
+SQLAlchemy>=2.0.40,<2.1
+psycopg[binary]>=3.2,<4
+alembic>=1.16,<2
+# Cliente HTTP hacia auth (identidad y permisos) y notificaciones (envíos).
+httpx>=0.28,<1
+# Lectura de multipart/form-data en FastAPI (subida de constancias).
+python-multipart>=0.0.20,<0.1
+# Validación de sintaxis de emails (EmailStr de Pydantic) en correos de pago.
+email-validator>=2.2,<3
+# Texto de las constancias PDF (como proyecto-05).
+pdfplumber>=0.11,<0.12
+# OCR de constancias escaneadas (OCR_ENABLED). Necesitan programas del sistema:
+# poppler (pdf2image) y tesseract con el idioma spa (pytesseract).
+pdf2image>=1.17,<2
+pytesseract>=0.3.13,<0.4
+# Paquete compartido de logs (schema audit). Ruta relativa: ejecutar pip desde la carpeta del servicio.
+-e ../../packages/platform-audit

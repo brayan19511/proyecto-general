@@ -1,6 +1,6 @@
 # Alcance del servicio notificaciones
 
-Estado (2026-10-01): borrador, nada implementado. Se distinguen **acuerdos**
+Estado (2026-10-01): **implementado** el alcance v1 (pasos 1 y 2: envío con cuerpo armado y plantillas). Se distinguen **acuerdos**
 (lo que el usuario ha decidido) de **propuestas** del asistente y
 **pendientes**. Una propuesta no se implementa sin confirmación.
 
@@ -195,6 +195,29 @@ los mismos destinatarios y asunto con sufijo `(1/N)`. Sin la opción, el
 comportamiento sigue siendo el rechazo (cambio compatible). A definir
 entonces: un adjunto solo de más de 25 MB (no se puede dividir), cómo se
 agrupan los mensajes en el seguimiento y cómo se reprocesa una parte.
+
+## Caso mapeado: canal WhatsApp (futuro)
+
+No está en v1. Notas para cuando se decida:
+
+- Vía oficial: WhatsApp Business Platform (Cloud API de Meta), directa o a
+  través de un proveedor (BSP, p. ej. Twilio), que suma su propia tarifa. Es de
+  pago: Meta cobra por mensaje de plantilla según categoría (marketing,
+  utilidad, autenticación) y país del destinatario; las respuestas dentro de la
+  ventana de atención de 24 h no se cobran. Confirmar tarifas vigentes en la
+  documentación de Meta antes de decidir.
+- Requisitos: cuenta Meta Business verificada, número dedicado, plantillas
+  aprobadas por Meta para mensajes que inicia la empresa, y consentimiento
+  (opt-in) de los destinatarios.
+- Descartado: librerías no oficiales que automatizan WhatsApp Web; violan los
+  términos de uso y el número puede ser bloqueado.
+- Impacto en este servicio: canal `whatsapp` junto a `email`; cuentas por
+  empresa (id del número, token de acceso cifrado con `app/core/crypto.py`);
+  destinatarios en formato E.164; plantillas con nombre, idioma y parámetros
+  (encaja con las plantillas del paso 2); mensajes propios por canal, porque
+  `messages` hoy es específica de email (asunto, cc, bcc); webhook público con
+  verificación de firma para estados (enviado, entregado, leído, fallido);
+  registro del costo por mensaje.
 
 ## Pendientes
 

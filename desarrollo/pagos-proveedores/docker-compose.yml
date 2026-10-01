@@ -1,0 +1,68 @@
+# Desarrollo de pagos-proveedores solo: su base y la API, construidas desde
+# services/pagos-proveedores. Usa el auth de desarrollo/auth (tokens) y el
+# notificaciones de desarrollo/notificaciones (envío de los avisos), en esta
+# máquina vía host.docker.internal.
+#
+#   docker compose --env-file ../../services/pagos-proveedores/.env up -d --build   (desde desarrollo/pagos-proveedores)
+#
+# Para enviar un lote, el token debe emitirlo ese auth y la empresa necesita en
+# notificaciones una cuenta SMTP y la plantilla (payment_provider_summary o la
+# elegida en /settings).
+
+name: dev-pagos-proveedores
+
+x-pagos-proveedores: &pagos-proveedores
+  image: pagos-proveedores:dev
+  volumes:
+    - ../../services/pagos-proveedores/.env:/app/services/pagos-proveedores/.env:ro
+  environment:
+    DB_HOST: db
+    DB_PORT: "5432"
+    AUTH_URL: ${DEV_AUTH_URL:-http://host.docker.internal:8000}
+    NOTIFICACIONES_URL: ${DEV_NOTIFICACIONES_URL:-http://host.docker.internal:8010}
+    TRUSTED_PROXIES: "[]"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5437}:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pagos-proveedores-migrate:
+    <<: *pagos-proveedores
+    build:
+      context: ../..
+      dockerfile: services/pagos-proveedores/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # API: http://localhost:8012/pagos-proveedores/docs
+  pagos-proveedores:
+    <<: *pagos-proveedores
+    pull_policy: never
+    ports:
+      - "127.0.0.1:${DEV_PAGOS_PROVEEDORES_PORT:-8012}:8000"
+    depends_on:
+      pagos-proveedores-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db:

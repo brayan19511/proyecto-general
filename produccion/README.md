@@ -13,6 +13,8 @@ Desde la raíz del repo (contexto de build = raíz, por `packages/platform-audit
 docker build -f services/auth/Dockerfile        -t ghcr.io/empresa/plataforma/auth:0.1.0 .
 docker build -f services/libro-mayor/Dockerfile -t ghcr.io/empresa/plataforma/libro-mayor:0.1.0 .
 docker build -f services/apigateway/Dockerfile  -t ghcr.io/empresa/plataforma/apigateway:0.1.0 .
+docker build -f services/notificaciones/Dockerfile    -t ghcr.io/empresa/plataforma/notificaciones:0.1.0 .
+docker build -f services/pagos-proveedores/Dockerfile -t ghcr.io/empresa/plataforma/pagos-proveedores:0.1.0 .
 docker build --build-arg VITE_API_URL=/ -t ghcr.io/empresa/plataforma/front-central:0.1.0 services/front-central
 docker build -t ghcr.io/empresa/plataforma/edge-caddy:0.1.0 services/edge
 docker push ghcr.io/empresa/plataforma/auth:0.1.0     # y así cada una
@@ -35,7 +37,8 @@ docker push ghcr.io/empresa/plataforma/auth:0.1.0     # y así cada una
 | Actualizar un servicio | Cambiar su `*_VERSION` y `docker compose up -d <servicio>` | En su carpeta: cambiar su versión y `docker compose up -d` |
 
 En los dos, cada contenedor recibe solo sus variables: no se comparte un `.env`
-con todos los secretos (auth no ve la clave de SAP, libro-mayor no ve las llaves JWT).
+con todos los secretos (auth no ve la clave de SAP, libro-mayor no ve las llaves JWT,
+solo notificaciones ve `SMTP_ENCRYPTION_KEYS`).
 
 ### Escenario A
 
@@ -57,14 +60,18 @@ sh crear-redes.sh                                     # una vez por servidor
 (cd base && docker compose up -d)                     # o una base gestionada
 (cd auth && docker compose up -d)                     # auth: además ./secrets con las llaves JWT
 (cd libro-mayor && docker compose up -d)
+(cd notificaciones && docker compose up -d)          # API + worker
+(cd pagos-proveedores && docker compose up -d)       # necesita notificaciones
 (cd apigateway && docker compose up -d)
 (cd borde && docker compose up -d)
 ```
 
-El orden importa la primera vez (cada *-migrate necesita la base): entre
-composes no hay `depends_on`. Las redes usan las mismas subredes fijas que
-desarrollo (172.30–172.32): no crearlas en la misma máquina que
-`desarrollo/plataforma-completa`.
+El orden importa la primera vez (cada *-migrate necesita la base y también
+migra el schema `audit`, así que no deben correr a la vez): entre composes no
+hay `depends_on`. En el escenario A el compose ya los encadena (auth →
+apigateway → libro-mayor → notificaciones → pagos-proveedores). Las redes usan
+las mismas subredes fijas que desarrollo (172.30–172.34): no crearlas en la
+misma máquina que `desarrollo/plataforma-completa`.
 
 **En servidores distintos** ya no sirve la red de Docker: cada servicio se
 llama por URL (p. ej. `AUTH_URL=https://auth.interna.empresa.com`) por una red
@@ -92,3 +99,20 @@ equipos. Pasos en `services/edge/README.md`. Solo caddy publica puertos
 - **Firewall del servidor**: abrir solo 80 y 443 (y 8443 si se usa pgAdmin).
 - **Recomendado**: un usuario de base por servicio con permisos solo sobre su
   schema (hoy los ejemplos usan uno común).
+
+## 4. Notificaciones y pagos a proveedores
+
+- **Claves SMTP:** `SMTP_ENCRYPTION_KEYS` en `notificaciones.env` (lista JSON de
+  claves Fernet; la primera cifra). Guardarlas como cualquier secreto: si se
+  pierden, hay que volver a escribir las contraseñas de las cuentas SMTP.
+- **Salida SMTP:** notificaciones (API y worker) usa su propia red de salida
+  (`smtp-egress`). Un relay interno se permite con `SMTP_ALLOWED_PRIVATE_NETWORKS`.
+- **Worker siempre levantado:** sin `notificaciones-worker` los correos quedan
+  pendientes. Al actualizar, `stop_grace_period: 2m` deja terminar el envío en curso.
+- **Publicarlos:** `NOTIFICACIONES_ENABLED=true` y `PAGOS_PROVEEDORES_ENABLED=true`
+  en `apigateway.env` (también se apagan desde Plataforma › Servicios).
+- **Primera vez por empresa:** en el front, Plataforma › Cuentas SMTP y
+  Plantillas de correo (la de los avisos de pago: `payment_provider_summary`, o
+  la que elija el administrador en Tesorería › Plantilla por defecto).
+- **Permisos:** ejecutar el seed de auth tras actualizarlo para cargar
+  `notifications.*` y `payments.*`.

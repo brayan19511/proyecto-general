@@ -43,6 +43,7 @@ def get_my_permissions(ctx: CompanyContext = Depends(get_company_context)):
     # El contexto ya calculó los permisos; aquí solo se presentan.
     return CompanyPermissionsResponse(
         user_id=ctx.user.id,
+        email=ctx.user.email,
         company=CompanyOut(id=ctx.company.id, code=ctx.company.code, name=ctx.company.name),
         is_platform_admin=ctx.is_platform_admin,
         permissions=[

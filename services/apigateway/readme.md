@@ -7,10 +7,12 @@ servicios y coordinación. Python + FastAPI, creado desde `services/base`.
 
 - Paso 1 (hecho): configuración, `GET /health`, `GET /ready` y logs (schema `audit`, `service=apigateway`).
 - Paso 2 (hecho): reenvío a auth; generalizado (2026-09-30) a varios servicios
-  (`app/api/routes/proxy.py`): auth y libro-mayor.
+  (`app/api/routes/proxy.py`): auth, libro-mayor, notificaciones y
+  pagos-proveedores (2026-10-01).
 - Paso 3 (hecho): `TRUSTED_PROXIES` con IPs o rangos CIDR (auth y `platform-audit`).
-- Compose (hecho): db, pgAdmin, auth, libro-mayor (API y worker) y la central,
-  con redes exclusivas central–auth y central–libro-mayor.
+- Compose (hecho): db, pgAdmin, auth, libro-mayor (API y worker),
+  notificaciones (API y worker), pagos-proveedores y la central, con redes
+  exclusivas entre la central y cada servicio.
 - Módulos, etapa 1 (hecho): `AUTH_ENABLED` por configuración.
 - Administración (hecho): validación de administrador vía `GET /auth/me` y
   `GET /gateway/admin/logs[/{id}]`.
@@ -32,6 +34,13 @@ Servicios publicados (registro en `app/core/services.py`):
 | --- | --- | --- | --- | --- |
 | auth | `/auth` | `AUTH_ENABLED`, `AUTH_URL`, `AUTH_TIMEOUT_SECONDS` | habilitado, 30 s | No (solo configuración) |
 | libro-mayor | `/libro-mayor` | `LIBRO_MAYOR_ENABLED`, `LIBRO_MAYOR_URL`, `LIBRO_MAYOR_TIMEOUT_SECONDS` | **deshabilitado**, 30 s | Sí |
+| notificaciones | `/notificaciones` | `NOTIFICACIONES_ENABLED`, `NOTIFICACIONES_URL`, `NOTIFICACIONES_TIMEOUT_SECONDS` | **deshabilitado**, 30 s (`POST /dispatches` 120 s, `POST /smtp-accounts/...` 130 s) | Sí |
+| pagos-proveedores | `/pagos-proveedores` | `PAGOS_PROVEEDORES_ENABLED`, `PAGOS_PROVEEDORES_URL`, `PAGOS_PROVEEDORES_TIMEOUT_SECONDS` | **deshabilitado**, 30 s (`POST /batches...`: crear y enviar lotes, 300 s) | Sí |
+
+Headers propios de notificaciones (2026-10-01): la central reenvía `Idempotency-Key`
+(y la admite en CORS) y devuelve `X-Content-Type-Options` y `Cache-Control` de
+cualquier servicio. Pendiente: la central lee el cuerpo entero en memoria antes de
+reenviarlo (`await request.body()`); un multipart de 100 MB ocupa 100 MB mientras pasa.
 
 | Qué | Cómo |
 | --- | --- |

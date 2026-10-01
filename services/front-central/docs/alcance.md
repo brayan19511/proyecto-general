@@ -89,6 +89,11 @@ Empresa (miembros, áreas y puestos, roles y permisos, historial), Monitoreo
 (logs por servicio y trazas) y Plataforma (empresas con compañía SAP,
 usuarios, servicios de la central e IPs bloqueadas).
 
+Agregado (2026-10-01): Tesorería, como en proyecto-08: pagos a proveedores
+(lotes y proveedores) y sus correos (notificaciones: enviados, plantillas,
+cuentas SMTP). Permisos visibles según
+`notifications.*` y `payments.*` (`shared/auth/access.ts`).
+
 ## Fases siguientes (contexto, no implementar aún)
 
 - **Contabilidad** (`/contabilidad/...`): líneas y resumen
@@ -140,3 +145,11 @@ Hechos:
 - Puertos locales de ejemplo inconsistentes entre los `.env` de la central y
   libro-mayor (8001/8002/8003).
 - Refresh en cookie HttpOnly (propuesta pendiente en `docs/arquitectura.md`).
+- Notificaciones y pagos-proveedores no exponen logs (contrato de
+  platform-audit): no aparecen en Monitoreo hasta que tengan su endpoint.
+- Pagos: el ZIP exige `payments.send` (no `view`); `GET /batches/{id}/files/{file}`
+  deja descargar constancias quitadas del lote; `delivery-status` sin esquema
+  en OpenAPI; la búsqueda de proveedores con solo signos devuelve todo.
+- Correos: la vista previa se sirve en un origen opaco (acuerdo 2026-10-01,
+  ver AGENTS.md). El navegador integrado de Claude bloquea esos marcos
+  (`ERR_BLOCKED_BY_CLIENT`): probarla en un navegador normal.

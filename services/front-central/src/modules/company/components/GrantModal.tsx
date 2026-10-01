@@ -2,7 +2,7 @@ import { useState } from 'react'
 import FormModal from '../../../shared/components/FormModal'
 import { errorMessage } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
-import { PERMISSIONS, SCOPE_HELP, SCOPE_LABEL, permissionInfo, type PermissionScope } from '../permissionCatalog'
+import { SCOPE_HELP, SCOPE_LABEL, type PermissionInfo, type PermissionScope } from '../permissionCatalog'
 import * as orgService from '../services/orgService'
 import type { Role, RoleGrant } from '../types'
 
@@ -15,21 +15,23 @@ export type GrantAction =
 type GrantModalProps = {
   action: GrantAction
   roles: Role[] // activos
+  catalog: PermissionInfo[] // catálogo de auth con sus textos (withTexts)
   onClose: () => void
   onSaved: () => void
 }
 
-const GROUPS = [...new Set(PERMISSIONS.map((p) => p.group))]
-
-export default function GrantModal({ action, roles, onClose, onSaved }: GrantModalProps) {
+export default function GrantModal({ action, roles, catalog, onClose, onSaved }: GrantModalProps) {
+  const groups = [...new Set(catalog.map((p) => p.group))]
   const changing = action.kind === 'change' ? action : null
   const [roleId, setRoleId] = useState(changing?.role.id ?? (action.kind === 'grant' ? action.roleId : '') ?? roles[0]?.id ?? '')
   const [permission, setPermission] = useState(
-    changing?.grant.permission ?? (action.kind === 'grant' ? action.permission : '') ?? PERMISSIONS[0].code,
+    changing?.grant.permission ?? (action.kind === 'grant' ? action.permission : '') ?? catalog.find((p) => p.loaded)?.code ?? '',
   )
   const role = roles.find((r) => r.id === roleId)
   const has = (scope: PermissionScope) => role?.permissions.some((g) => g.permission === permission && g.scope === scope) ?? false
-  const scopes = (permissionInfo(permission)?.scopes ?? []).filter((s) => !has(s))
+  const info = catalog.find((p) => p.code === permission)
+  // Sin cargar en la base (falta el seed) auth respondería 422: no se ofrece.
+  const scopes = info?.loaded ? info.scopes.filter((s) => !has(s)) : []
   const [scope, setScope] = useState<PermissionScope | ''>('')
   // El elegido si sigue siendo válido; si no, el primero disponible.
   const chosen: PermissionScope | '' = scope && scopes.includes(scope) ? scope : (scopes.at(0) ?? '')
@@ -38,7 +40,6 @@ export default function GrantModal({ action, roles, onClose, onSaved }: GrantMod
 
   const lockRole = changing !== null || (action.kind === 'grant' && action.roleId !== undefined)
   const lockPermission = changing !== null || (action.kind === 'grant' && action.permission !== undefined)
-  const info = permissionInfo(permission)
 
   const submit = async () => {
     if (!chosen) return
@@ -79,10 +80,12 @@ export default function GrantModal({ action, roles, onClose, onSaved }: GrantMod
         <label htmlFor="grant-permission" className="form-label">Permiso</label>
         <select id="grant-permission" className="form-select" value={permission} disabled={lockPermission}
           onChange={(e) => setPermission(e.target.value)}>
-          {GROUPS.map((group) => (
+          {groups.map((group) => (
             <optgroup key={group} label={group}>
-              {PERMISSIONS.filter((p) => p.group === group).map((p) => (
-                <option key={p.code} value={p.code}>{p.label} ({p.code})</option>
+              {catalog.filter((p) => p.group === group).map((p) => (
+                <option key={p.code} value={p.code} disabled={!p.loaded}>
+                  {p.label} ({p.code}){p.loaded ? '' : ' — falta ejecutar el seed de auth'}
+                </option>
               ))}
             </optgroup>
           ))}
@@ -92,7 +95,10 @@ export default function GrantModal({ action, roles, onClose, onSaved }: GrantMod
 
       <fieldset>
         <legend className="form-label fs-6">{changing ? `Nuevo alcance (hoy: ${SCOPE_LABEL[changing.grant.scope]})` : 'Alcance'}</legend>
-        {scopes.length === 0 && (
+        {info && !info.loaded && (
+          <p className="small text-warning-emphasis mb-0">Este permiso aún no está cargado en auth: ejecuta su seed para poder concederlo.</p>
+        )}
+        {info?.loaded && scopes.length === 0 && (
           <p className="small text-body-secondary mb-0">El rol ya tiene este permiso con todos los alcances que admite.</p>
         )}
         {scopes.map((s) => (

@@ -4,6 +4,7 @@ server {
     server_name _;
     root /usr/share/nginx/html;
     server_tokens off; # sin versión de nginx en respuestas de error
+    charset utf-8; # text/html; charset=utf-8
 
     gzip on;
     gzip_vary on;
@@ -21,6 +22,12 @@ server {
     location /assets/ {
         include /etc/nginx/conf.d/security-headers.inc;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # Vista previa de correos: su propia CSP (ver email-preview-headers.inc).
+    location = /email-preview.html {
+        include /etc/nginx/conf.d/email-preview-headers.inc;
         try_files $uri =404;
     }
 

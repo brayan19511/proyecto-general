@@ -46,3 +46,11 @@ class RoleOut(BaseModel):
     permissions: list[RolePermissionOut]  # Solo concesiones vigentes.
     created_at: datetime
     updated_at: datetime
+
+
+class PermissionCatalogOut(BaseModel):
+    """Un permiso del catálogo: qué alcances admite y si ya está cargado en la base."""
+
+    code: str
+    scopes: list[str]  # company, area u own
+    loaded: bool  # false: falta ejecutar el seed para poder concederlo

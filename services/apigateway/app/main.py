@@ -50,7 +50,8 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     # X-Company-Id: empresa activa. X-API-Key: credencial alternativa al Bearer.
-    allow_headers=["Content-Type", "Authorization", "X-Company-Id", "X-API-Key"],
+    # Idempotency-Key: creación de envíos en notificaciones.
+    allow_headers=["Content-Type", "Authorization", "X-Company-Id", "X-API-Key", "Idempotency-Key"],
     # Headers de respuesta que el JavaScript del cliente puede leer.
     # Content-Disposition: nombre del archivo en descargas (CSV de libro-mayor).
     expose_headers=["X-Trace-Id", "Retry-After", "Content-Disposition"],

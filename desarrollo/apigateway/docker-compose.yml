@@ -1,6 +1,8 @@
 # Desarrollo de la central sola: su base y el servicio, construidos desde
-# services/apigateway. Reenvía a auth y libro-mayor de desarrollo/auth y
-# desarrollo/libro-mayor (en esta máquina, vía host.docker.internal).
+# services/apigateway. Reenvía a auth, libro-mayor, notificaciones y
+# pagos-proveedores de las carpetas hermanas de desarrollo/ (en esta máquina,
+# vía host.docker.internal). Notificaciones y pagos-proveedores solo reciben si
+# NOTIFICACIONES_ENABLED / PAGOS_PROVEEDORES_ENABLED están en true.
 #
 #   docker compose --env-file ../../services/apigateway/.env up -d --build   (desde desarrollo/apigateway)
 #
@@ -18,6 +20,8 @@ x-apigateway: &apigateway
     DB_PORT: "5432"
     AUTH_URL: ${DEV_AUTH_URL:-http://host.docker.internal:8000}
     LIBRO_MAYOR_URL: ${DEV_LIBRO_MAYOR_URL:-http://host.docker.internal:8002}
+    NOTIFICACIONES_URL: ${DEV_NOTIFICACIONES_URL:-http://host.docker.internal:8010}
+    PAGOS_PROVEEDORES_URL: ${DEV_PAGOS_PROVEEDORES_URL:-http://host.docker.internal:8012}
     # Clientes directos (sin proxy delante): no confía en X-Forwarded-For.
     TRUSTED_PROXIES: "[]"
   extra_hosts:

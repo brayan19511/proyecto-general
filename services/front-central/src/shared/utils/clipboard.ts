@@ -16,13 +16,16 @@ export async function copyText(text: string): Promise<boolean> {
   area.setAttribute('readonly', '')
   area.style.position = 'fixed'
   area.style.opacity = '0'
-  document.body.appendChild(area)
+  // Dentro de un <dialog> modal lo de fuera queda inerte (no se puede
+  // seleccionar): el textarea va en el diálogo abierto, si lo hay.
+  const host = document.activeElement?.closest('dialog[open]') ?? document.body
+  host.appendChild(area)
   area.select()
   try {
     return document.execCommand('copy')
   } catch {
     return false
   } finally {
-    document.body.removeChild(area)
+    area.remove()
   }
 }

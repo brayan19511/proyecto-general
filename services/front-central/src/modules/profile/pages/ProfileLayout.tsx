@@ -7,6 +7,7 @@ const TABS = [
   { label: 'Empresas y puestos', to: '/perfil/empresas', icon: 'buildings' },
   { label: 'Seguridad', to: '/perfil/seguridad', icon: 'key' },
   { label: 'Sesiones', to: '/perfil/sesiones', icon: 'laptop' },
+  { label: 'API keys', to: '/perfil/api-keys', icon: 'key-fill' },
 ]
 
 // Contenedor de Mi perfil: cabecera y pestañas; cada pestaña es una ruta hija.

@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router'
-import { LEDGER_ADMIN, LEDGER_VIEW } from '../shared/auth/access'
+import type { ReactNode } from 'react'
+import { LEDGER_ADMIN, LEDGER_VIEW, NOTIFICATIONS_VIEW, PAYMENTS_VIEW, type AccessRule } from '../shared/auth/access'
 import AppLayout from './layout/AppLayout'
 import { NAV_GROUPS } from './layout/navigation'
 import NotFoundPage from './NotFoundPage'
@@ -30,17 +31,24 @@ import PermissionsTab from '../modules/company/components/PermissionsTab'
 import RolesTab from '../modules/company/components/RolesTab'
 import SyncPage from '../modules/ledger/pages/SyncPage'
 import LogsPage from '../modules/monitoring/pages/LogsPage'
+import DispatchesPage from '../modules/notifications/pages/DispatchesPage'
+import SmtpAccountsPage from '../modules/notifications/pages/SmtpAccountsPage'
+import TemplatesPage from '../modules/notifications/pages/TemplatesPage'
+import BatchDetailPage from '../modules/payments/pages/BatchDetailPage'
+import BatchesPage from '../modules/payments/pages/BatchesPage'
+import ProvidersPage from '../modules/payments/pages/ProvidersPage'
 import CompaniesTab from '../modules/profile/pages/CompaniesTab'
 import InfoTab from '../modules/profile/pages/InfoTab'
 import ProfileLayout from '../modules/profile/pages/ProfileLayout'
 import SecurityTab from '../modules/profile/pages/SecurityTab'
 import SessionsTab from '../modules/profile/pages/SessionsTab'
+import ApiKeysTab from '../modules/profile/pages/ApiKeysTab'
 
 // Provisional: cada ítem del menú sin módulo propio muestra "en construcción",
 // protegido con la misma regla que el menú. Se quita a medida que cada módulo
 // agrega su ruta real (también envuelta en RequireAccess).
 // Rutas que ya tienen su módulo (se declaran abajo).
-const IMPLEMENTED = new Set(['/perfil', '/contabilidad/libro-mayor', '/contabilidad/consulta-sap', '/contabilidad/sincronizacion', '/contabilidad/reglas', '/contabilidad/centros-costo', '/empresa/miembros', '/empresa/areas', '/empresa/roles', '/empresa/historial', '/contabilidad/cuentas', '/plataforma/empresas', '/plataforma/usuarios', '/plataforma/servicios', '/plataforma/ips', '/monitoreo/logs'])
+const IMPLEMENTED = new Set(['/perfil', '/contabilidad/libro-mayor', '/contabilidad/consulta-sap', '/contabilidad/sincronizacion', '/contabilidad/reglas', '/contabilidad/centros-costo', '/empresa/miembros', '/empresa/areas', '/empresa/roles', '/empresa/historial', '/contabilidad/cuentas', '/plataforma/empresas', '/plataforma/usuarios', '/plataforma/servicios', '/plataforma/ips', '/monitoreo/logs', '/tesoreria/correos', '/plataforma/plantillas', '/plataforma/cuentas-smtp', '/tesoreria/pagos', '/tesoreria/proveedores'])
 
 const pendingRoutes = NAV_GROUPS.flatMap((g) => g.items)
   .filter((item) => !IMPLEMENTED.has(item.path))
@@ -52,6 +60,18 @@ const pendingRoutes = NAV_GROUPS.flatMap((g) => g.items)
       </RequireAccess>
     ),
   }))
+
+// Ruta de un módulo por empresa: permiso + empresa activa.
+function companyRoute(path: string, rule: AccessRule, page: ReactNode) {
+  return {
+    path,
+    element: (
+      <RequireAccess rule={rule}>
+        <RequireCompany>{page}</RequireCompany>
+      </RequireAccess>
+    ),
+  }
+}
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -73,6 +93,7 @@ export const router = createBrowserRouter([
               { path: 'empresas', element: <CompaniesTab /> },
               { path: 'seguridad', element: <SecurityTab /> },
               { path: 'sesiones', element: <SessionsTab /> },
+              { path: 'api-keys', element: <ApiKeysTab /> },
             ],
           },
           {
@@ -231,6 +252,23 @@ export const router = createBrowserRouter([
               </RequireAccess>
             ),
           },
+          // Tesorería: las rutas del front no usan /notificaciones ni
+          // /pagos-proveedores porque el borde (Caddy) envía esos prefijos a la API.
+          companyRoute(
+            'tesoreria/correos',
+            { anyOf: NOTIFICATIONS_VIEW },
+            <DispatchesPage
+              title="Correos enviados"
+              description="Avisos de pago enviados a proveedores desde Tesorería."
+              consumer="pagos-proveedores"
+            />,
+          ),
+          // Plataforma › correo: de la empresa activa (por eso RequireCompany).
+          companyRoute('plataforma/plantillas', 'platformAdmin', <TemplatesPage />),
+          companyRoute('plataforma/cuentas-smtp', 'platformAdmin', <SmtpAccountsPage />),
+          companyRoute('tesoreria/pagos', { anyOf: PAYMENTS_VIEW }, <BatchesPage />),
+          companyRoute('tesoreria/pagos/:batchId', { anyOf: PAYMENTS_VIEW }, <BatchDetailPage />),
+          companyRoute('tesoreria/proveedores', { anyOf: PAYMENTS_VIEW }, <ProvidersPage />),
           ...pendingRoutes,
         ],
       },
