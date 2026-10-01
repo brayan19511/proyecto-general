@@ -1,5 +1,6 @@
-# Entorno completo: PostgreSQL, pgAdmin, auth, libro-mayor (API y worker), la API central,
-# el front (front-central) y el proxy de borde con HTTPS (caddy).
+# Entorno completo: PostgreSQL, pgAdmin, auth, libro-mayor (API y worker),
+# notificaciones (API y worker), pagos-proveedores, la API central, el front (front-central) y el
+# proxy de borde con HTTPS (caddy).
 #
 #   docker compose --env-file ../../services/apigateway/.env up -d --build
 #   (desde desarrollo/plataforma-completa; o copiar ese .env aquí como .env y omitir --env-file)
@@ -17,13 +18,20 @@
 #              y la base. Cada uno escucha en su *_BIND (127.0.0.1 por defecto).
 #   proxy-net  exclusiva de caddy con la central, el front y pgAdmin, subred fija:
 #              la central confía en ella (TRUSTED_PROXIES) para leer la IP real.
-#   auth-net   exclusiva de la central y auth, subred fija: auth confía en ella
-#              (TRUSTED_PROXIES). Sin salida a internet ni acceso desde fuera.
-#   data       la base; auth, libro-mayor y la central escriben aquí (datos y logs).
+#   auth-net   la central, libro-mayor y notificaciones llegan a auth, subred fija:
+#              auth confía en ella (TRUSTED_PROXIES). Sin salida a internet.
+#   data       la base; auth, libro-mayor, notificaciones y la central escriben aquí.
 #   libro-mayor-net  exclusiva de la central y libro-mayor, subred fija (su
 #              TRUSTED_PROXIES). Sin salida a internet ni acceso desde fuera.
 #   sap-egress salida hacia SAP HANA (fuera de la plataforma) para la API y el
 #              worker de libro-mayor.
+#   notificaciones-net  exclusiva de la central y notificaciones, subred fija
+#              172.33.0.0/24 (su TRUSTED_PROXIES). Sin salida ni acceso desde fuera.
+#   smtp-egress salida hacia servidores SMTP para la API (probar cuentas) y el
+#              worker de notificaciones.
+#   pagos-proveedores-net  exclusiva de la central y pagos-proveedores, subred fija
+#              172.34.0.0/24 (su TRUSTED_PROXIES). pagos-proveedores también está
+#              en notificaciones-net (crea envíos) y auth-net (valida tokens).
 
 # Mismo nombre de proyecto que el Compose anterior (carpeta proyecto-central):
 # reutiliza los contenedores y el volumen existentes en lugar de crear otros.
@@ -125,8 +133,48 @@ services:
     networks: [data]
     restart: "no"
     depends_on:
-      # Último de la cadena: también migra el schema audit.
+      # Después de apigateway-migrate: también migra el schema audit.
       apigateway-migrate:
+        condition: service_completed_successfully
+
+  notificaciones-migrate:
+    image: ${NOTIFICACIONES_IMAGE:-notificaciones:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/notificaciones/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; no se usa al migrar.
+    networks: [data]
+    restart: "no"
+    depends_on:
+      # Después de libro-mayor-migrate: también migra el schema audit.
+      libro-mayor-migrate:
+        condition: service_completed_successfully
+
+  pagos-proveedores-migrate:
+    image: ${PAGOS_PROVEEDORES_IMAGE:-pagos-proveedores:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/pagos-proveedores/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../../services/pagos-proveedores/.env:/app/services/pagos-proveedores/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Solo porque la configuración las exige; no se usan al migrar.
+      AUTH_URL: http://auth.internal:8000
+      NOTIFICACIONES_URL: http://notificaciones.internal:8000
+    networks: [data]
+    restart: "no"
+    depends_on:
+      # Último de la cadena: también migra el schema audit.
+      notificaciones-migrate:
         condition: service_completed_successfully
 
   auth:
@@ -213,6 +261,95 @@ services:
       libro-mayor-migrate:
         condition: service_completed_successfully
 
+  # Notificaciones: API (cuentas SMTP, envíos y consultas). Sin puerto publicado:
+  # solo la central llega a ella, por notificaciones-net.
+  notificaciones:
+    image: ${NOTIFICACIONES_IMAGE:-notificaciones:0.1.0}
+    # La construye notificaciones-migrate (una sola vez). never = usar la local.
+    pull_policy: never
+    volumes:
+      - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Pregunta identidad y permisos a auth por auth-net (como la central).
+      AUTH_URL: http://auth.internal:8000
+      # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por notificaciones-net.
+      TRUSTED_PROXIES: '["172.33.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      # Salida a servidores SMTP (POST /smtp-accounts/{id}/test).
+      smtp-egress:
+      notificaciones-net:
+        # Solo existe en notificaciones-net: la central lo usa en NOTIFICACIONES_URL.
+        aliases: [notificaciones.internal]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      notificaciones-migrate:
+        condition: service_completed_successfully
+
+  # Envía los mensajes pendientes (reintentos incluidos). Misma imagen; debe estar
+  # siempre levantado. Varias réplicas pueden convivir (SKIP LOCKED).
+  notificaciones-worker:
+    image: ${NOTIFICACIONES_IMAGE:-notificaciones:0.1.0}
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; el worker no llama a auth.
+    networks: [data, smtp-egress]
+    healthcheck:
+      disable: true   # El HEALTHCHECK de la imagen es de la API (HTTP); el worker no la sirve.
+    # Al detenerlo, termina el mensaje en curso (SIGTERM). Con un envío de 25 MB
+    # por varias cuentas puede tardar: se le da más margen que los 10 s por defecto.
+    stop_grace_period: 2m
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      notificaciones-migrate:
+        condition: service_completed_successfully
+
+  # Pagos a proveedores: maestro, lotes de constancias (lectura de PDFs con OCR) y
+  # envío por notificaciones. Sin puerto publicado: solo la central llega a él.
+  pagos-proveedores:
+    image: ${PAGOS_PROVEEDORES_IMAGE:-pagos-proveedores:0.1.0}
+    # La construye pagos-proveedores-migrate (una sola vez). never = usar la local.
+    pull_policy: never
+    volumes:
+      - ../../services/pagos-proveedores/.env:/app/services/pagos-proveedores/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Identidad y permisos por auth-net (como la central).
+      AUTH_URL: http://auth.internal:8000
+      # Crea los envíos directo en notificaciones (no por la central: no cuenta dos
+      # veces en los límites), con el token del usuario.
+      NOTIFICACIONES_URL: http://notificaciones.internal:8000
+      # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por pagos-proveedores-net.
+      TRUSTED_PROXIES: '["172.34.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      # Para llegar a notificaciones.internal. Notificaciones no le concede nada
+      # por eso: valida el token del usuario con auth en cada solicitud.
+      notificaciones-net:
+      pagos-proveedores-net:
+        # Solo existe en pagos-proveedores-net: la central lo usa en PAGOS_PROVEEDORES_URL.
+        aliases: [pagos-proveedores.internal]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      pagos-proveedores-migrate:
+        condition: service_completed_successfully
+
   apigateway:
     image: ${APIGATEWAY_IMAGE:-apigateway:0.1.0}
     # La construye apigateway-migrate (una sola vez): construirla aquí también en paralelo
@@ -230,6 +367,10 @@ services:
       AUTH_URL: http://auth.internal:8000
       # Publicar libro-mayor: LIBRO_MAYOR_ENABLED=true en el .env de la central.
       LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
+      # Publicar notificaciones: NOTIFICACIONES_ENABLED=true en el .env de la central.
+      NOTIFICACIONES_URL: http://notificaciones.internal:8000
+      # Publicar pagos-proveedores: PAGOS_PROVEEDORES_ENABLED=true en el .env de la central.
+      PAGOS_PROVEEDORES_URL: http://pagos-proveedores.internal:8000
       # Solo caddy (proxy-net) puede informar la IP real del cliente.
       TRUSTED_PROXIES: '["172.32.0.0/24"]'
     networks:
@@ -237,6 +378,8 @@ services:
       data:
       auth-net:
       libro-mayor-net:
+      notificaciones-net:
+      pagos-proveedores-net:
       proxy-net:
         aliases: [apigateway.proxy]
     # No depende de auth: arranca y está "ready" aunque auth no esté (responde
@@ -315,6 +458,19 @@ networks:
       config:
         - subnet: 172.31.0.0/24
   sap-egress:
+  notificaciones-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.33.0.0/24
+  pagos-proveedores-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.34.0.0/24
+  # Salida hacia servidores SMTP (internet y relays internos). Qué destinos se
+  # admiten lo decide notificaciones (SMTP_ALLOWED_PORTS, SMTP_ALLOWED_PRIVATE_NETWORKS).
+  smtp-egress:
   proxy-net:
     internal: true
     ipam:
