@@ -15,13 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import ExpenseCategory, ExpenseRule
 
-UNCLASSIFIED = {
-    "category_code": None, "category_name": None, "subcategory_code": None, "subcategory_name": None, "report_name": None,
-}
+# Nombres de proyecto-05 (acuerdo): codigo = categoría, subcodigo = subcategoría,
+# nombre_cuenta = nombre de la línea en reportes.
+UNCLASSIFIED = {"codigo": None, "subcodigo": None, "nombre_cuenta": None}
 
 
 def describe_rules(db: Session, rule_ids: set[str]) -> dict[str, dict]:
-    """rule_id → categoría, subcategoría y nombre de reporte (incluye reglas ya dadas de baja)."""
+    """rule_id → codigo, subcodigo y nombre_cuenta de la regla (incluye reglas ya dadas de baja)."""
     rule_ids = {rule_id for rule_id in rule_ids if rule_id}
     if not rule_ids:
         return {}
@@ -38,11 +38,9 @@ def describe_rules(db: Session, rule_ids: set[str]) -> dict[str, dict]:
         parent = categories.get(category.parent_id) if category.parent_id else None
         top, sub = (parent, category) if parent else (category, None)
         described[rule_id] = {
-            "category_code": top.code,
-            "category_name": top.name,
-            "subcategory_code": sub.code if sub else None,
-            "subcategory_name": sub.name if sub else None,
-            "report_name": rule.report_name,
+            "codigo": top.name,
+            "subcodigo": sub.name if sub else None,
+            "nombre_cuenta": rule.report_name,
         }
     return described
 
@@ -71,18 +69,36 @@ def merge_partials(partials: list[dict]) -> dict:
     return merged
 
 
-def build_summary(partial: dict, described: dict[str, dict]) -> list[dict]:
-    """Totales por año, mes, categoría y subcategoría (sin regla = categoría null)."""
+def supplier_or_none(supplier: str | None) -> str | None:
+    """Proveedor para agrupar: NULL y texto vacío de SAP cuentan como "sin proveedor".
+
+    Solo afecta a la salida del resumen; el dato guardado no se modifica.
+    """
+    return supplier if supplier and supplier.strip() else None
+
+
+def build_summary(partial: dict, described: dict[str, dict], *, by_supplier: bool = False) -> list[dict]:
+    """Totales por año, mes, codigo y subcodigo (sin regla = codigo null).
+
+    Con by_supplier las claves parciales traen el proveedor como cuarto
+    elemento, (año, mes, regla, proveedor), y cada fila de salida incluye
+    "supplier" (null = sin proveedor).
+    """
     totals = defaultdict(lambda: {"lines": 0, "amount_local": Decimal(0), "amount_foreign": Decimal(0)})
-    for (year, month, rule_id), (count, local, foreign) in partial.items():
+    for partial_key, (count, local, foreign) in partial.items():
+        year, month, rule_id = partial_key[:3]
         info = described.get(rule_id, UNCLASSIFIED)
-        key = (year, month, info["category_code"], info["category_name"],
-               info["subcategory_code"], info["subcategory_name"])
+        key = (year, month, info["codigo"], info["subcodigo"])
+        if by_supplier:
+            key += (supplier_or_none(partial_key[3]),)
         totals[key]["lines"] += count
         totals[key]["amount_local"] += local
         totals[key]["amount_foreign"] += foreign
-    return [
-        {"year": k[0], "month": k[1], "category_code": k[2], "category_name": k[3],
-         "subcategory_code": k[4], "subcategory_name": k[5], **v}
-        for k, v in sorted(totals.items(), key=lambda item: (item[0][0], item[0][1], item[0][2] or "", item[0][4] or ""))
-    ]
+
+    rows = []
+    for key, values in sorted(totals.items(), key=lambda item: tuple(v or "" for v in item[0])):
+        row = {"year": key[0], "month": key[1], "codigo": key[2], "subcodigo": key[3], **values}
+        if by_supplier:
+            row["supplier"] = key[4]
+        rows.append(row)
+    return rows

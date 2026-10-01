@@ -6,6 +6,7 @@ from app.models.entities import (
     Base,
     ChangeHistory,
     ClassificationRun,
+    CostCenterMapping,
     ExpenseCategory,
     ExpenseRule,
     LedgerLine,

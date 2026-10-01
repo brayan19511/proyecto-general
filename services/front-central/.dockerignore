@@ -1,0 +1,8 @@
+# Lo que no entra al contexto de build de la imagen.
+node_modules
+dist
+.env*
+!.env.example
+*.log
+.vscode
+.idea

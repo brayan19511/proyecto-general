@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     # fallida como interrumpida (worker caído). Debe superar lo que tarda un día.
     SYNC_STALE_MINUTES: int = Field(default=30, ge=1, le=1440)
 
+    # Reintentos al consultar SAP en la sincronización (caída de SAP o de red).
+    # Espera: SYNC_RETRY_SECONDS, luego ×4 (30 s, 2 min). 0 = sin reintentos.
+    SYNC_RETRIES: int = Field(default=2, ge=0, le=5)
+    SYNC_RETRY_SECONDS: int = Field(default=30, ge=1, le=600)
+
     # Reclasificación: líneas por lote (una transacción por lote).
     CLASSIFY_BATCH_SIZE: int = Field(default=2000, ge=100, le=50000)
     # Consultas en vivo a SAP (POST /live-queries): responden en la misma solicitud.

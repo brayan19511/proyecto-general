@@ -1,0 +1,34 @@
+# Sitio del front (SPA). nginx sustituye ${API_ORIGIN} al arrancar el contenedor.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    server_tokens off; # sin versión de nginx en respuestas de error
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml font/woff2;
+
+    # Para el healthcheck del compose.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Archivos con hash en el nombre (Vite): se pueden guardar en caché un año.
+    location /assets/ {
+        include /etc/nginx/conf.d/security-headers.inc;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # Cualquier otra ruta es de la SPA (react-router): se responde index.html,
+    # sin caché, para que un despliegue nuevo se vea al recargar.
+    location / {
+        include /etc/nginx/conf.d/security-headers.inc;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri /index.html;
+    }
+}

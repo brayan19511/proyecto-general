@@ -1,0 +1,94 @@
+:root {
+  --app-sidebar-width: 240px;
+  --app-sidebar-collapsed-width: 72px;
+  --app-topbar-height: 56px;
+
+  --app-sidebar-bg: var(--bs-tertiary-bg);
+  --app-border: var(--bs-border-color-translucent);
+  --app-nav-color: var(--bs-secondary-color);
+  --app-nav-active-bg: var(--bs-primary-bg-subtle);
+  --app-nav-active-color: var(--bs-primary-text-emphasis);
+}
+
+body {
+  font-size: 0.9375rem;
+}
+/* Diálogos nativos (<dialog>): el contenido es una .card de Bootstrap. */
+.app-dialog {
+  width: calc(100% - 2rem);
+  max-width: 28rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--bs-border-radius-lg);
+  background: transparent;
+}
+
+.app-dialog-wide {
+  max-width: 1400px;
+}
+
+.app-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.app-dialog {
+  max-height: calc(100% - 2rem);
+}
+
+/* Menú desplegable con <details> (CheckboxDropdown). */
+.app-dropdown {
+  position: relative;
+}
+
+.app-dropdown > summary {
+  list-style: none;
+}
+
+.app-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-dropdown-end {
+  right: 0;
+}
+
+.app-dropdown-start {
+  left: 0;
+}
+
+.app-dropdown-menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 14rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  margin-top: 0.25rem;
+  background: var(--bs-body-bg);
+}
+
+/* Árbol resumen (tablix): importes a la derecha y celdas que abren el detalle. */
+.app-tree td.amount,
+.app-tree th.amount {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-tree .cell-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.app-tree .cell-link:hover {
+  color: var(--bs-link-hover-color);
+}
+
+.app-tree tr.level-0 > td {
+  font-weight: 600;
+  background: var(--bs-tertiary-bg);
+}

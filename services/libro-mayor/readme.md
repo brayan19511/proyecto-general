@@ -8,9 +8,9 @@ health/ready, Dockerfile, Alembic (schema `libro_mayor`), actores, historial de
 cambios, identidad y permisos vía auth, rutas de compañía SAP y cuentas, seed,
 conexión HANA de solo lectura, lector de la vista (`app/sap/`), líneas del
 libro mayor, ejecuciones de sincronización y worker con horario y delta,
-categorías, reglas, motor de clasificación y consultas en vivo. Faltan
-centros de costo con homologación, filtro por áreas y consultas sobre las
-líneas sincronizadas. Lo demás descrito en `docs/` son objetivos.
+categorías, reglas, motor de clasificación, consultas en vivo, consultas
+sobre las líneas sincronizadas y homologación de centros de costo con filtro
+por áreas. Lo demás descrito en `docs/` son objetivos.
 
 ## Propósito
 
@@ -58,19 +58,30 @@ Todas bajo `/libro-mayor`. Las de empresa exigen `Authorization: Bearer` y
 | `POST /admin/sap-company` | Admin de plataforma | Configura `sap_schema`, `source_view`, `sync_start_date`. 409 si ya hay una activa o si el schema es de otra empresa; 422 si no es un identificador válido |
 | `PATCH /admin/sap-company` | Admin de plataforma | Cambia solo lo enviado. `source_view` y `sync_start_date` siempre; `sap_schema` solo si la empresa no tiene líneas (409) |
 | `DELETE /admin/sap-company` | Admin de plataforma | Baja lógica |
-| `GET /accounts` | `ledger.accounts.manage` (company) | Cuentas activas (`include_inactive=true` para ver bajas); paginado |
-| `POST /accounts` | `ledger.accounts.manage` (company) | Alta `{code, match_mode, name?}`. 409 si se superpone o si la empresa no tiene compañía SAP; 422 si el código no es numérico |
-| `GET /accounts/{id}` | `ledger.accounts.manage` (company) | Una cuenta, activa o dada de baja |
-| `PATCH /accounts/{id}` | `ledger.accounts.manage` (company) | Cambia solo lo enviado. `name` siempre; `code`/`match_mode` solo si la cuenta no tiene líneas ni sincronización abierta (409: dar de baja y registrar otra); 409 si se superpone |
-| `DELETE /accounts/{id}` | `ledger.accounts.manage` (company) | Baja lógica; deja de sincronizarse, se conservan sus líneas |
-| `POST /sync-runs` | `ledger.sync` (company) | `{account_id, date_from, date_to}` → 202 con la ejecución `pending`. 409 si la cuenta ya tiene una abierta o falta SAP; 422 si el rango es inválido, futuro o supera `SYNC_MAX_DAYS` |
-| `GET /sync-runs` | `ledger.sync` (company) | Ejecuciones (filtros `account_id`, `status`), más recientes primero |
-| `GET /sync-runs/{id}` | `ledger.sync` (company) | Estado y avance: `days_done`/`days_total`, filas leídas, nuevas y actualizadas, `safe_error` |
-| `GET/POST /categories`, `GET/PATCH/DELETE /categories/{id}` | `ledger.rules.manage` (company) | Categorías de dos niveles (`parent_id` = subcategoría). Baja: 409 si tiene subcategorías o reglas activas |
-| `GET/POST /rules`, `GET/PATCH/DELETE /rules/{id}` | `ledger.rules.manage` (company) | Reglas en orden de evaluación. Alta, edición y baja registran una reclasificación para el worker |
-| `POST /classification-runs` | `ledger.rules.manage` (company) | `{date_from?, date_to?}` → 202. Reclasifica todas las líneas (o un rango) con las reglas activas |
-| `GET /classification-runs`, `/{id}` | `ledger.rules.manage` (company) | Estado: `rows_checked`, `rows_changed` |
-| `POST /live-queries` | `ledger.live` (company) | `{accounts, date_from, date_to, split?, view?}` → **200 con la respuesta completa** (líneas clasificadas + resumen). Consulta SAP en vivo en la misma solicitud; no guarda nada. Ver "Consultas en vivo" |
+| `GET /sync-status` | `ledger.view` | Por cuenta: última carga correcta, marca de agua, horas desde la última, fallos seguidos, último error |
+| `GET /ledger/lines` | `ledger.view` | Líneas sincronizadas y clasificadas, JSON paginado (`limit` ≤ 5000, `next_offset`). Filtros: `date_from`, `date_to`, `accounts`, `codigo`, `subcodigo`, `no_subcodigo`, `supplier`, `no_supplier`, `cost_center_code`, `unclassified` |
+| `GET /ledger/lines.csv` | `ledger.view` | Mismos filtros, todo el rango en CSV en streaming (Excel / Power BI "Desde la web"); `sep=;` opcional |
+| `GET /ledger/summary` | `ledger.view` | Mismos filtros; por año, mes, `codigo`, `subcodigo` y, con `by_supplier=true`, `supplier` |
+| `GET /accounts` | `ledger.view` | Cuentas activas (`include_inactive=true` para ver bajas); paginado |
+| `POST /accounts` | `ledger.admin` | Alta `{code, match_mode, name?}`. 409 si se superpone o si la empresa no tiene compañía SAP; 422 si el código no es numérico |
+| `GET /accounts/{id}` | `ledger.view` | Una cuenta, activa o dada de baja |
+| `PATCH /accounts/{id}` | `ledger.admin` | Cambia solo lo enviado. `name` siempre; `code`/`match_mode` solo si la cuenta no tiene líneas ni sincronización abierta (409: dar de baja y registrar otra); 409 si se superpone |
+| `DELETE /accounts/{id}` | `ledger.admin` | Baja lógica; deja de sincronizarse, se conservan sus líneas |
+| `POST /sync-runs` | `ledger.admin` | `{account_id, date_from, date_to}` → 202 con la ejecución `pending`. 409 si la cuenta ya tiene una abierta o falta SAP; 422 si el rango es inválido, futuro o supera `SYNC_MAX_DAYS` |
+| `GET /sync-runs` | `ledger.view` | Ejecuciones (filtros `account_id`, `status`), más recientes primero |
+| `GET /sync-runs/{id}` | `ledger.view` | Estado y avance: `days_done`/`days_total`, filas leídas, nuevas y actualizadas, `safe_error` |
+| `GET/POST /categories`, `GET/PATCH/DELETE /categories/{id}` | GET `ledger.view`; resto `ledger.update` | Categorías de dos niveles (`parent_id` = subcategoría). Baja: 409 si tiene subcategorías o reglas activas |
+| `GET/POST /rules`, `GET/PATCH/DELETE /rules/{id}` | GET `ledger.view`; resto `ledger.update` | Reglas en orden de evaluación. Alta, edición y baja registran una reclasificación para el worker |
+| `POST /rules/import` | `ledger.update` | Carga masiva en una transacción: `mode` (`append`/`replace`), `dry_run`, categorías por nombre (se crean si faltan). Ver la guía |
+| `POST /classification-runs` | `ledger.update` | `{date_from?, date_to?}` → 202. Reclasifica todas las líneas (o un rango) con las reglas activas |
+| `GET /classification-runs`, `/{id}` | `ledger.view` | Estado: `rows_checked`, `rows_changed` |
+| `POST /live-queries` | `ledger.view` | `{accounts, date_from, date_to, split?, view?}` → **200 con la respuesta completa** (por defecto solo las líneas clasificadas). Consulta SAP en vivo en la misma solicitud; no guarda nada. Ver "Consultas en vivo" |
+| `GET /cost-centers` | `ledger.view` (company) | Centros que aparecen en las líneas, con su área y qué homologación aplicó (`match_mode`, `mapping_code`); `unmapped=true` = solo los que faltan (incluye una fila `null` = líneas sin centro) |
+| `GET /cost-center-mappings` | `ledger.view` (company) | Homologaciones activas (`include_inactive=true` para ver bajas) |
+| `POST /cost-center-mappings` | `ledger.admin` | `{cost_center_code, match_mode?, area_code}` (o `area_id`; `match_mode` `exact` por defecto o `prefix`) → 201. 422 si el área no existe o está de baja en auth; 409 si ese código con ese modo ya tiene área |
+| `PATCH /cost-center-mappings/{id}` | `ledger.admin` | `{area_code}` o `{area_id}`: mueve el centro (o prefijo) a otra área. Código y modo no se editan: baja y alta |
+| `DELETE /cost-center-mappings/{id}` | `ledger.admin` | Baja lógica: sus líneas pasan a verse solo con alcance company |
+| `POST /cost-center-mappings/import` | `ledger.admin` | Carga masiva `{mode, dry_run, mappings}` en una transacción. Ver la guía |
 | `POST /admin/seed` | Admin de plataforma | Carga inicial de la empresa (solo con `SEED_ENABLED=true`; si no, 404). Ver "Seed" |
 | `GET /admin/logs` | Admin de plataforma (sin `X-Company-Id`) | Logs propios (filtros `trace_id`, `user_id`, `outcome`, `path_prefix`) |
 | `GET /admin/logs/{id}` | Admin de plataforma | Log con sus detalles y pasos |
@@ -85,22 +96,74 @@ corresponden a su configuración; en ese caso se da de baja y se registra otra.
 
 ## Identidad y permisos
 
-`app/api/dependencies.py`. libro-mayor no valida tokens: pregunta a auth
-reenviando el Bearer, igual que la central.
+`app/api/dependencies.py`. libro-mayor no valida tokens: pregunta a auth.
 
-1. `GET /auth/me` → id del usuario y si es administrador de plataforma.
-2. `GET /auth/me/permissions` con `X-Company-Id` → empresa validada y permisos
-   con alcance. Auth responde 403 si no pertenece a la empresa.
+- Rutas de empresa: **una** llamada a `GET /auth/me/permissions`, reenviando
+  el Bearer (con `X-Company-Id`) o la `X-API-Key` (la empresa es la de la
+  clave). Auth devuelve `user_id` (campo agregado de forma compatible,
+  2026-09-30), empresa validada y permisos con alcance. Una API key nunca es
+  administrador de plataforma y sus permisos se limitan a sus scopes.
+- Rutas sin empresa (logs): `GET /auth/me`, solo Bearer.
 
-Una sesión revocada o una membresía dada de baja pierde acceso de inmediato.
-Coste: dos llamadas a auth por solicitud de empresa (se puede reducir a una si
-auth agrega el id de usuario a `/me/permissions`). Sin reintentos; auth caído
-→ 502, lento → 504. Por ahora solo Bearer, no `X-API-Key`.
+Una sesión revocada, una API key revocada o una membresía dada de baja pierde
+acceso de inmediato. Sin reintentos; auth caído → 502, lento → 504. Si auth es
+anterior al campo `user_id`, responde 502 "auth no está actualizado":
+desplegar auth primero.
 
-**Pendiente en auth:** los permisos `ledger.accounts.manage`, `ledger.sync`,
-`ledger.rules.manage` y `ledger.live` (alcance `company`) no existen todavía en
-su catálogo (`services/auth/app/core/permissions.py`). Hasta agregarlos y
-asignarlos a un rol, solo el administrador de plataforma usa esas rutas.
+**Permisos** (acuerdo del usuario, 2026-09-30): tres niveles, cada uno
+incluye al anterior (`app/core/permissions.py`). `ledger.update` y
+`ledger.admin` son de alcance `company`; `ledger.view` admite `company` o
+`area`:
+
+| Permiso | Puede |
+| --- | --- |
+| `ledger.view` | Consultar líneas, resumen, CSV y en vivo; ver reglas, categorías, cuentas, sincronizaciones y su estado |
+| `ledger.update` | Además crear, editar y dar de baja reglas y categorías, la carga masiva y reclasificar |
+| `ledger.admin` | Además cuentas a sincronizar y sincronización manual |
+
+Compañía SAP, seed y logs: solo el administrador de plataforma. Los tres
+códigos están en el catálogo de auth (`services/auth/app/core/permissions.py`). Para
+activarlos: volver a ejecutar el seed de auth (crea los permisos nuevos del
+catálogo) y asignarlos a un rol con `POST /auth/roles/{role_id}/permissions`.
+Una API key tiene como máximo los permisos de su usuario, recortados a sus
+scopes: para Power BI basta `ledger.view`.
+
+## Áreas y homologación de centros de costo
+
+SAP no trae un área de negocio: trae el centro de costo (`V1141177 T65 REAL
+PLAZA PURUCHUCO I`) y algunos centros no corresponden a un área o se
+reemplazan por otros. La tabla `cost_center_mappings` dice a qué área de auth
+pertenece cada centro. Igual que las cuentas, la homologación es por código
+exacto (`exact`, el código completo) o por prefijo (`prefix`, todo centro que
+empiece así: `V114` → todas las tiendas `V114…`). Si varias coinciden gana la
+exacta y, entre prefijos, el más largo (acuerdo): así `V114` → VENTAS con la
+excepción `V1141061` → ADMIN, o `A` → LOG con `A10` → ADMIN.
+Un centro termina siempre en una sola área. Con eso se decide quién ve cada
+línea:
+
+| Usuario | Permiso en auth | Ve |
+| --- | --- | --- |
+| Contador master | `ledger.view` alcance `company` | Todo, incluso líneas sin centro o con centro sin homologar |
+| Vendedor (puesto en VENTAS) | `ledger.view` alcance `area`, área VENTAS | Solo centros homologados a VENTAS |
+| Contador asignado a ventas | `ledger.view` alcance `area`, área VENTAS | Igual que el anterior: solo VENTAS |
+| Usuario con puestos en VENTAS y ADMINISTRACION | `ledger.view` alcance `area`, ambas áreas | Solo centros de esas dos áreas |
+
+- Las áreas de un usuario salen de sus puestos activos en auth (unión de
+  todos). Para dar o quitar un área se cambian los puestos en auth, no aquí.
+- Se aplica en `GET /ledger/lines`, `/ledger/lines.csv`, `/ledger/summary` y
+  `POST /live-queries`, siempre en el servidor: un filtro `cost_center_code`
+  de otra área devuelve 0 líneas, no las de esa área.
+- Un usuario de área sin centros homologados a sus áreas recibe 200 vacío.
+- Cambiar o dar de baja una homologación rige en la consulta siguiente: el
+  área se resuelve al consultar y no se reprocesan líneas.
+- Cada línea devuelta trae `area_id` y `area_name` (null = sin homologar).
+- Validación contra auth: al homologar, libro-mayor pide `GET /auth/areas`
+  con las credenciales del mismo usuario y solo acepta un área activa de la
+  empresa. Guarda `area_code` y `area_name` como copia para mostrarlos; si se
+  renombra el área en auth, basta un PATCH para refrescarlos.
+- Homologar es `ledger.admin`; ver las homologaciones y `GET /cost-centers`
+  pide `ledger.view` de alcance company (un usuario de área no ve el mapa de
+  toda la empresa).
 
 ## Seed
 
@@ -152,9 +215,13 @@ puerto, VPN o firewall, o ejecutarlo dentro del contenedor.
 
 1. `POST /sync-runs` valida y registra la ejecución `pending`. No consulta SAP:
    el trabajo pesado nunca corre dentro de la solicitud HTTP.
-2. El worker la toma, consulta SAP **día por día** y guarda cada día (líneas +
-   avance) en una transacción. Un fallo deja registrado hasta qué día llegó
-   y la ejecución queda `failed` con un `safe_error`.
+2. El worker la toma, consulta SAP **por mes** (el delta, de una vez) y guarda
+   cada tramo (líneas + avance) en una transacción. Si SAP o la red fallan,
+   reintenta el tramo `SYNC_RETRIES` veces (30 s, 2 min). Si sigue fallando,
+   la ejecución queda `failed` con un `safe_error` y hasta dónde llegó; la
+   marca de agua no avanza y el siguiente turno recupera lo que faltó.
+   `GET /sync-status` muestra fallos seguidos y horas desde la última carga
+   correcta por cuenta.
 3. Upsert por la clave SAP (`company_id`, `transaccion_id`, `linea`): nueva →
    se inserta; existente y cambiada en SAP → se actualiza; igual → no se toca.
    Repetir un rango no duplica. Consulta las existentes y actualiza con el ORM
@@ -232,9 +299,16 @@ sincronización, la reclasificación y las consultas en vivo.
   mayúsculas, en proveedor, descripción o referencias 1–3 (texto tal como
   viene de SAP).
 - `amount_min`/`amount_max`: importe en moneda local **con signo**.
+- `nombre_cuenta` (columna `report_name`): nombre con que se muestra la línea
+  en reportes, como en proyecto-05. `codigo`/`subcodigo` agrupan; `nombre_cuenta`
+  distingue, p. ej. "DIFERENCIA POR REDONDEO" y "DIFERENCIA DE INVENTARIO"
+  dentro de la misma subcategoría. Opcional.
 - Resultado: `rule_id` en la línea (NULL = sin clasificar). La categoría y la
   subcategoría se resuelven al leer: renombrarlas no obliga a reclasificar.
-  `report_name` vacío = nombre de la cuenta SAP.
+  `nombre_cuenta` vacío = nombre de la cuenta SAP.
+- Nombres de la clasificación en la API (acuerdo, como proyecto-05): `codigo`
+  (categoría), `subcodigo` (subcategoría) y `nombre_cuenta`. Las categorías se
+  identifican por nombre, únicas en su nivel; no tienen código aparte.
 - Sin `tipo_regla` ni pandas (acuerdos).
 
 Cuándo se clasifica:
@@ -244,6 +318,12 @@ Cuándo se clasifica:
 | Sincronización | Cada línea nueva o cambiada, con las reglas vigentes al guardar |
 | Alta, edición o baja de regla | Reclasificación `rule_change` en el worker: las que tenían esa regla + las que podrían cumplirla ahora (prefiltro SQL por cuenta, contrapartida, centro e importes; los textos se evalúan en Python) |
 | `POST /classification-runs` | Todas las de la empresa o un rango de contabilización. Usarla una vez para clasificar lo sincronizado antes de tener reglas |
+
+Carga masiva: `POST /rules/import` (todo o nada, `dry_run` para revisar antes,
+`mode=replace` da de baja las activas sin borrar filas, una sola
+reclasificación al final). `scripts/convert_legacy_rules.py` convierte el SQL
+de proyecto-05; las reglas de RASH Perú convertidas están en
+`data/import/reglas_rash_peru.json`.
 
 La reclasificación avanza por lotes (`CLASSIFY_BATCH_SIZE`) con commit por
 lote. No guarda historial por línea: el registro es la ejecución
@@ -264,12 +344,12 @@ POST /libro-mayor/live-queries
 | --- | --- |
 | `accounts` | `"95*"` = todas las que empiezan por 95; `"701110002"` = exacta. No hace falta que estén registradas; repetidas se ignoran |
 | `split` | `month` (default: un año = 12 tramos) o `day` |
-| `view` | `full` (default: líneas + resumen) o `summary` (solo totales, liviano) |
+| `view` | `lines` (default: solo líneas), `summary` (solo totales, liviano) o `full` (ambos) |
 
 Respuesta: `lines_total`, `chunks`, `elapsed_ms`, `summary` (por año, mes,
 categoría y subcategoría: cantidad e importes con signo) y `lines` (en orden
-contable, cada una con `rule_id`, categoría, subcategoría y `report_name`; null
-con `view=summary`).
+contable, cada una con `rule_id`, `codigo`, `subcodigo` y `nombre_cuenta`).
+`lines` es null con `view=summary`; `summary` es null con `view=lines`.
 
 Cómo funciona:
 
@@ -283,22 +363,32 @@ Controles de memoria y carga:
 - **Pool compartido** (`LIVE_QUERY_PARALLEL`, 4): entre TODAS las solicitudes,
   el proceso nunca tiene más de N consultas abiertas contra SAP; las demás
   esperan turno. Probado: 6 consultas simultáneas → nunca más de 4 a SAP.
-- **`view=full`**: como máximo `LIVE_QUERY_MAX_LINES` (100 000) líneas; si se
-  supera, 422 sugiriendo acotar o pedir `view=summary`.
+- **`view=lines` o `full`**: como máximo `LIVE_QUERY_MAX_LINES` (100 000)
+  líneas; si se supera, 422 sugiriendo acotar o pedir `view=summary`.
 - **`view=summary`**: cada tramo se resume al llegar y sus líneas se descartan;
   un año pesa unos pocos KB y no tiene límite de líneas.
-- **Tiempo máximo** `LIVE_QUERY_TIMEOUT_SECONDS` (120 s) → 504. La API central
-  corta a los 30 s por defecto: al publicar la ruta hay que subirle el timeout
-  a esta operación.
+- **Tiempo máximo** `LIVE_QUERY_TIMEOUT_SECONDS` (120 s) → 504. En la central esta
+  ruta tiene su propio timeout (130 s), mayor que el de libro-mayor.
 - Otros límites: `LIVE_QUERY_MAX_DAYS` (366) y `LIVE_QUERY_MAX_ACCOUNTS` (20).
 
 Errores: 422 (cuenta, rango o demasiadas líneas), 409 (falta SAP o compañía
 SAP), 502 (SAP falló o devolvió datos fuera de contrato; solo mensaje seguro),
-504 (tiempo). Alcance company por ahora: el filtro por áreas llega con la
-homologación de centros de costo.
+504 (tiempo). Un usuario de área solo recibe las líneas de sus áreas (ver
+"Áreas y homologación").
 
 Prioridad del worker (sincronización y reclasificación): 1) reclasificaciones,
 2) sincronizaciones. Las consultas en vivo no pasan por el worker.
+
+## Consultas sobre lo sincronizado
+
+`GET /ledger/lines` (JSON paginado), `/ledger/lines.csv` (todo el filtro en
+streaming) y `/ledger/summary`. Leen `ledger_lines` en PostgreSQL, ya
+clasificadas: no van a SAP ni evalúan reglas. Pensadas para reportes, la app
+web y Excel / Power BI con API key (`X-API-Key`, ver la guía). El CSV lleva
+BOM UTF-8, fechas ISO e importes con punto y signo. Un usuario de área solo
+recibe las líneas de sus áreas (ver "Áreas y homologación").
+
+Respuestas de más de 1 KB van comprimidas con gzip si el cliente lo acepta.
 
 ## Logs
 
@@ -349,6 +439,7 @@ crea el schema si no existe, guarda su versión en
 | `d608ca9bd49a` horario y delta | `sync_runs.schedule_slot` (única por cuenta y turno) y tipos `initial`/`delta`. El cambio del CHECK se escribió a mano: autogenerate no detecta cambios en CHECK |
 | `f1cfc1eac2ab` categorias reglas y consultas en vivo | `expense_categories`, `expense_rules`, `classification_runs`; `ledger_lines.rule_id` y `classified_at`; tablas de la consulta en vivo asíncrona (retiradas en la siguiente) |
 | `0708533d3e77` retirar consultas en vivo asincronas | Borra `live_queries`, `live_query_parts`, `live_query_lines` (decisión del usuario: la consulta en vivo responde en la misma llamada). Escrita a mano: autogenerate nunca propone borrar tablas |
+| `7096d47b8a5d` categorias por nombre | Quita `expense_categories.code`; nombre único por nivel (índices filtrados) |
 
 ```powershell
 .\enviroment\Scripts\python.exe -m alembic current
@@ -380,6 +471,7 @@ Cada archivo nuevo de modelos se importa en `app/models/__init__.py`.
 | `SAP_CONNECT_TIMEOUT_SECONDS` | Espera para abrir la conexión | `30` | Red lenta |
 | `SAP_QUERY_TIMEOUT_SECONDS` | Máximo por consulta | `300` | Cargas grandes (p. ej. cuentas 70) |
 | `SYNC_MAX_DAYS` | Máximo de días por ejecución manual | `366` | Si se necesitan rangos más largos |
+| `SYNC_RETRIES` / `SYNC_RETRY_SECONDS` | Reintentos por tramo si SAP o la red fallan, y espera inicial (luego ×4) | `2` / `30` | `0` = sin reintentos |
 | `SYNC_POLL_SECONDS` | Cada cuánto el worker busca pendientes | `10` | Rara vez |
 | `SYNC_STALE_MINUTES` | Sin avance en este tiempo = interrumpida | `30` | Si un día de una cuenta tarda más (p. ej. ventas 70) |
 | `SYNC_SCHEDULE` | Turnos diarios del worker (`HH:MM,…` en `SAP_TIMEZONE`) | `06:00,10:00,14:00,18:00` (por confirmar) | Cambiar horas; `off` = sin horario |
@@ -388,21 +480,25 @@ Cada archivo nuevo de modelos se importa en `app/models/__init__.py`.
 | `LIVE_QUERY_MAX_DAYS` / `LIVE_QUERY_MAX_ACCOUNTS` | Límites de una consulta en vivo | `366` / `20` | Según la carga que tolere SAP |
 | `LIVE_QUERY_PARALLEL` | Consultas a SAP a la vez en el proceso, entre todas las solicitudes | `4` | Subir si SAP lo tolera; es el freno de carga |
 | `LIVE_QUERY_MAX_LINES` | Máximo de líneas con `view=full` | `100000` | Según la memoria del contenedor |
-| `LIVE_QUERY_TIMEOUT_SECONDS` | Tiempo máximo de una consulta en vivo | `120` | Rangos grandes; subir también el de la central |
+| `LIVE_QUERY_TIMEOUT_SECONDS` | Tiempo máximo de una consulta en vivo | `120` | Rangos grandes; si pasa de 120, subir también el de la ruta en la central (`public_routes.py`, 130 s) |
 | `SEED_ENABLED` | Habilita `POST /admin/seed` | `false` | Solo para ejecutar el seed |
 
 ## Documentación
 
+- [Guía de configuración y uso, con ejemplos JSON](docs/guia-configuracion.md)
 - [Instrucciones del servicio](AGENTS.md)
 - [Requisitos y alcance](docs/requisitos.md)
 - [Modelo de datos](docs/modelo-datos.md)
 - [Referencia: implementación previa en proyecto-05](docs/referencia-proyecto-05.md)
+- [Guía de configuración y uso](docs/guia-configuracion.md)
+- [Integración con la central](docs/integracion-central.md)
 
 ## Dependencias con otros servicios
 
 - auth: identidad, empresa activa y permisos con alcance.
-- API central: publicación de rutas cuando el servicio funcione de forma
-  independiente (`LIBRO_MAYOR_ENABLED` / `LIBRO_MAYOR_URL`, pendiente).
+- API central: publicado (2026-09-30), apagado por defecto
+  (`LIBRO_MAYOR_ENABLED`). Rutas, contenedores y cómo activarlo:
+  [integración con la central](docs/integracion-central.md).
 - SAP HANA: origen de datos de solo lectura, fuera de la plataforma
   (`hdbcli` + `sqlalchemy-hana`). `tzdata` aporta la base de zonas horarias
   (Windows y la imagen slim no traen una del sistema).

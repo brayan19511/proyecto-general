@@ -186,6 +186,10 @@ Sin caché: cada solicitud recalcula los permisos, así retirar un permiso, pues
 
 Con `X-Company-Id`, devuelve los permisos efectivos del usuario en esa empresa (`code`, `company`, `area_ids`, `own`). El frontend lo usa para decidir qué mostrar; el backend vuelve a comprobar en cada operación.
 
+Catálogo de otros servicios (2026-09-30): `ledger.view` (company, area), `ledger.update` y `ledger.admin` (company) para libro-mayor. Los aplica libro-mayor; auth solo los guarda y los asigna por roles. Para crearlos en una base existente, volver a ejecutar el seed (crea los permisos nuevos del catálogo) y asignarlos con `POST /roles/{id}/permissions`.
+
+Acepta Bearer o `X-API-Key` (con API key la empresa es la de la clave). Incluye `user_id` (agregado de forma compatible, 2026-09-30): así otro servicio (libro-mayor) valida identidad y permisos en una sola llamada, también con API key (p. ej. Power BI).
+
 ### Pendiente
 
 - Regla de delegación: implementada (ver "Regla de delegación (común)").

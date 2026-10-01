@@ -1,8 +1,9 @@
 # Requisitos del servicio libro-mayor
 
-Estado: requisitos objetivo, sin implementación. Se distinguen **acuerdos** (lo
-que el usuario ha pedido) de **propuestas** del asistente y **pendientes**. Una
-propuesta no se implementa sin confirmación.
+Estado (2026-09-30): implementado lo acordado (ver el orden de construcción
+al final); falta probar contra HANA real y publicar en la central. Se distinguen
+**acuerdos** (lo que el usuario ha pedido) de **propuestas** del asistente y
+**pendientes**. Una propuesta no se implementa sin confirmación.
 
 ## Alcance
 
@@ -22,24 +23,29 @@ Fuera de alcance por ahora:
 
 ## Actores y permisos
 
-Los permisos viven en el catálogo de auth y se heredan por puestos. Nombres
-propuestos (pendientes de confirmar):
+Los permisos viven en el catálogo de auth y se heredan por puestos. Acuerdo
+del usuario (2026-09-30): tres niveles, cada uno incluye al anterior.
 
 | Permiso | Alcances | Uso |
 | --- | --- | --- |
-| `ledger.view` | area, company | Consultar líneas, resumen y detalle |
-| `ledger.export` | area, company | Exportar a Excel |
-| `ledger.rules.manage` | company | Crear, editar y dar de baja reglas; reprocesar |
-| `ledger.accounts.manage` | company | Registrar cuentas a sincronizar |
-| `ledger.sync` | company | Lanzar sincronización o reproceso manual |
+| `ledger.view` | company o area | Consultar líneas, resumen, CSV y en vivo; ver reglas, categorías, cuentas y sincronizaciones |
+| `ledger.update` | company | Además crear, editar y dar de baja reglas y categorías, importarlas y reclasificar |
+| `ledger.admin` | company | Además registrar cuentas y lanzar sincronizaciones manuales |
 
 - "Contador master" (acuerdo del usuario) = `ledger.view` con alcance `company`:
   filtra cualquier área de la empresa.
-- Usuario de área = `ledger.view` con alcance `area`: solo ve sus áreas y puede
-  filtrar entre ellas. Si pide un área ajena, se responde 403 o se ignora
-  (pendiente: elegir comportamiento).
+- Usuario de área = `ledger.view` con alcance `area`: solo ve las líneas de
+  centros homologados a sus áreas (acuerdo del usuario, 2026-09-30):
+
+| Usuario | Permiso en auth | Ve |
+| --- | --- | --- |
+| Contador master | `ledger.view` alcance `company` | Todo, incluso líneas sin centro o con centro sin homologar |
+| Vendedor (puesto en VENTAS) | `ledger.view` alcance `area`, área VENTAS | Solo centros homologados a VENTAS |
+| Contador asignado a ventas | `ledger.view` alcance `area`, área VENTAS | Igual que el anterior: solo VENTAS |
+| Usuario con puestos en VENTAS y ADMINISTRACION | `ledger.view` alcance `area`, ambas áreas | Solo centros de esas dos áreas |
 - El administrador de plataforma (`is_platform_admin`) no necesita puestos, pero
-  sigue limitado a la empresa activa de la solicitud.
+  sigue limitado a la empresa activa de la solicitud. Compañía SAP, seed y logs
+  son solo suyos.
 
 ## Empresas y conexión SAP
 
@@ -126,6 +132,13 @@ condiciones de proyecto-05 sin `tipo_regla`, motor puro
 - Evaluación por `priority, id`; gana la primera que cumple. Condición vacía =
   no filtra. Sin regla = sin clasificar (`rule_id` NULL); el nombre de reporte
   cae al de la cuenta SAP.
+- Acuerdo (2026-09-30): en la API se usan los nombres de proyecto-05:
+  `codigo` (categoría), `subcodigo` (subcategoría), `nombre_cuenta`. Las
+  categorías se identifican por nombre (sin código generado).
+- `nombre_cuenta` (columna `report_name`): etiqueta de la línea en
+  reportes, distinta de categoría y subcategoría (en septiembre 2026,
+  "DIFERENCIA POR REDONDEO" y "DIFERENCIA DE INVENTARIO" dentro de la misma
+  subcategoría). Se mantiene, opcional.
 - Texto: sin distinguir mayúsculas en proveedor, descripción y referencias 1–3.
 - Acuerdo: los importes se guardan y devuelven con signo, tal como SAP
   (433 de 2 343 líneas negativas en septiembre 2026). Las reglas con monto
@@ -135,6 +148,27 @@ condiciones de proyecto-05 sin `tipo_regla`, motor puro
 - Pendiente: si las cuentas 70 (ventas) usan las mismas categorías y reglas o
   un catálogo propio. Hoy el motor no distingue: aplica las reglas de la
   empresa a toda línea.
+
+## Carga masiva de reglas
+
+**Implementado** (2026-09-30, pedido del usuario). `POST /rules/import` en vez
+de SQL directo en la base: el SQL se saltaría validaciones, historial, actor y
+reclasificación, y el `DELETE` de proyecto-05 borraba filas. Todo o nada,
+`dry_run`, `mode=replace` con baja lógica, categorías por nombre (se crean si
+faltan) y una reclasificación al final. Conversor del SQL de proyecto-05:
+`scripts/convert_legacy_rules.py`; reglas de RASH Perú en
+`data/import/reglas_rash_peru.json` (225 activas, 21 categorías).
+
+Avisos en los datos de RASH para revisar con contabilidad (el import no los
+corrige: se cargan tal cual):
+- Categorías casi iguales que quedan separadas: `OPERACIONES` /
+  `OPERACIONES GV08`, `OTROS GASTOS E-COMMERCE` / `OTROS GASTOS E-COMMERCE GV09`,
+  `GASTOS EXTRAORDINARIOS` / `GASTOS EXTRAORDINARIOS GV11`.
+- Subcategoría con doble espacio: `UTILES  DE ESCRITORIO` frente a
+  `UTILES DE ESCRITORIO`.
+- `959003132`: con centro `A0000001` va a `OPERACIONES GV08` y sin centro a
+  `CORPORATIVO`; en las demás cuentas el patrón es el inverso (A0000001 →
+  CORPORATIVO). Posible inversión en el origen.
 
 ## Reproceso
 
@@ -149,7 +183,9 @@ un dato derivado: sin historial por línea; el registro es la ejecución.
 **Implementado** (2026-09-30, pedido y diseño del usuario). Una sola llamada:
 consulta SAP de una o varias cuentas (`["95*", "97*", "701110002"]`), parte el
 rango en tramos (mes por defecto, o día), los consulta en paralelo, clasifica
-al vuelo y devuelve la respuesta completa (líneas + resumen, o solo resumen).
+al vuelo y devuelve la respuesta completa según `view` (acuerdo, en el body):
+`lines` (solo líneas, default a pedido del usuario), `summary` (solo resumen)
+o `full` (ambos).
 No guarda resultados ni toca `ledger_lines`.
 
 - Primera versión asíncrona (202 + consultar después, resultados en tablas)
@@ -157,8 +193,8 @@ No guarda resultados ni toca `ledger_lines`.
   miles de consultas.
 - Límites (del asistente, ajustables): 4 consultas a SAP a la vez por proceso,
   100 000 líneas con detalle, 120 s, 366 días, 20 cuentas.
-- Pendiente: filtro por áreas (hoy alcance company); timeout de esta ruta en
-  la central al publicarla (> 30 s).
+- Filtro por áreas: implementado (homologación de centros de costo). En la
+  central esta ruta tiene su propio timeout (130 s).
 - Futuro posible (no ahora): una cuenta por consulta si el volumen lo exige.
 
 ## Consultas
@@ -167,10 +203,12 @@ No guarda resultados ni toca `ledger_lines`.
   subcódigo, proveedor, año y mes.
 - Resumen agregado (año, mes, código, subcódigo, nombre, proveedor, conteo,
   importes ML y ME) y su detalle.
-- Exportación Excel (`openpyxl`, cuando llegue el paso).
+- Exportación para Excel / Power BI: `GET /ledger/lines.csv` en streaming
+  (implementado; reemplaza la idea de generar `.xlsx` con `openpyxl`).
 - El filtro de áreas autorizadas se aplica siempre en el servidor, a través
   de la homologación de centros de costo (sección siguiente).
-- Rangos acotados y paginación en listados (límites a definir).
+- Rangos acotados y paginación en listados: implementado (`limit` ≤ 5000 en
+  `/ledger/lines`; límites de la consulta en vivo en la sección anterior).
 
 ## Centros de costo y homologación
 
@@ -197,36 +235,38 @@ de negocio, aunque SAP lo nombre como tienda. Ejemplo: todas las tiendas `V…`
 - El filtro de un usuario con alcance `area` = líneas cuyo centro de costo esté
   homologado a alguna de sus áreas.
 - Cambiar una homologación no reescribe las líneas: el área se resuelve al
-  consultar (propuesta; evita reprocesos masivos). Pendiente confirmar si
-  además se guarda el área resuelta en la línea por rendimiento.
-- Propuesta: catálogo local de centros de costo (código y nombre), alimentado
-  al sincronizar y, si SAP lo permite, desde su tabla de centros de costo
-  (`OPRC` en SAP B1, por confirmar con el equipo SAP), para homologar centros
-  antes de que tengan movimientos.
-- Acuerdo: la tabla de homologación lleva una columna de modo de coincidencia
-  (`exact` | `prefix`). Se implementa primero `exact`; `prefix`
-  (`V114*` → Ventas) queda previsto para el futuro y, al activarlo, exacto
-  tiene prioridad sobre prefijo y el prefijo más largo sobre el más corto.
-- Acuerdo: un centro de costo pertenece a una sola área (único activo por
-  empresa y centro).
+  consultar (implementado; evita reprocesos masivos). Guardar el área resuelta
+  en la línea por rendimiento queda para si hiciera falta.
+- Implementado: `GET /cost-centers` lista los centros vistos en las líneas
+  sincronizadas (`unmapped=true` = los que faltan homologar).
+- Idea futura, abierta (decisión del usuario, 2026-09-30: no implementar
+  todavía, pero no descartar): leer la tabla de centros de costo de SAP
+  (`OPRC` en SAP B1, por confirmar con el equipo SAP) para listar y homologar
+  centros antes de que tengan movimientos.
+- Acuerdo: modo de coincidencia `exact` | `prefix`, como las cuentas
+  (implementado 2026-09-30; `V114` prefijo → Ventas). Exacto tiene prioridad
+  sobre prefijo y el prefijo más largo sobre el más corto, para poder
+  exceptuar centros concretos.
+- Acuerdo: un centro de costo resuelve a una sola área (único activo por
+  empresa, código y modo).
 - Líneas sin centro de costo o con centro no homologado: se guardan igual
   (acuerdo) y solo las ve el alcance `company` hasta que se configure su
-  homologación (propuesta; coherente con "extraer y luego configurar").
-  Reporte de centros sin homologar para el administrador.
-- Pendiente: consultar SAP en directo (`get-by-sap` de proyecto-05) o solo la
-  copia local. Recomendación: solo copia local para usuarios; SAP directo, si
-  se mantiene, solo para administración.
+  homologación (implementado; coherente con "extraer y luego configurar").
+- Resuelto (decisión del usuario): las dos opciones, con las reglas
+  aplicadas y el mismo filtro por áreas: en tiempo real (`POST /live-queries`,
+  no guarda nada) y sobre la copia sincronizada (`/ledger/*`).
 
 ## Identidad hacia auth
 
 - Implementado (2026-09-28), mismo criterio que la central: libro-mayor no
   valida tokens; pregunta a auth `GET /auth/me` (usuario) y
   `GET /auth/me/permissions` con `X-Company-Id` (empresa validada y permisos
-  con alcance). Refleja revocaciones al instante; cuesta dos llamadas por
-  solicitud (una si auth agrega el id de usuario a `/me/permissions`). Solo
-  Bearer por ahora; `X-API-Key` pendiente.
-- Pendiente en auth: agregar los códigos `ledger.*` a su catálogo de permisos
-  y asignarlos a roles. Hoy solo el administrador de plataforma opera cuentas.
+  con alcance). Refleja revocaciones al instante.
+- Implementado (2026-09-30): `ledger.view`, `ledger.update` y `ledger.admin`
+  están en el catálogo de auth; falta asignarlos a roles en cada empresa.
+- Implementado (2026-09-30): auth devuelve `user_id` en `/auth/me/permissions`
+  (cambio compatible); libro-mayor hace una sola llamada y acepta X-API-Key para
+  Excel / Power BI.
 - La sincronización programada usa el actor de sistema local
   `libro-mayor.scheduler` (acuerdo); no usa API keys personales.
 
@@ -267,8 +307,14 @@ Cada paso se explica y se acuerda antes de escribir código:
    `SAP_TIMEZONE` (defaults 06:00, 10:00, 14:00, 18:00 en America/Lima), y
    que `fecha_creacion`/`fecha_actualizacion` de la vista reflejen todo
    cambio de una línea (el delta depende de ellas).
-8. Autenticación contra auth (hecha) y filtro por áreas (pendiente).
-9. Consultas, resumen y exportación.
+8. ~~Autenticación contra auth y filtro por áreas.~~ Hecho (2026-09-30):
+   también con API key; homologación `cost_center_mappings` y filtro en
+   líneas, resumen, CSV y consultas en vivo.
+9. ~~Consultas, resumen y exportación.~~ Hecho (2026-09-30): `GET /ledger/lines`
+   (paginado), `/ledger/lines.csv` (streaming para Excel / Power BI con API key)
+   y `/ledger/summary`, con alcance company o area.
 10. ~~Reproceso y administración de reglas.~~ Hecho (2026-09-30). Además:
     consultas en vivo en una llamada, por tramos en paralelo.
-11. Publicación de rutas en la central.
+11. ~~Publicación de rutas en la central.~~ Hecho (2026-09-30): reenvío
+    generalizado, timeout por ruta, streaming y gzip tal cual (ver
+    `docs/integracion-central.md`).

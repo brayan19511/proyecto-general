@@ -1,0 +1,151 @@
+{
+  "mode": "replace",
+  "dry_run": true,
+  "mappings": [
+    {
+      "cost_center_code": "V",
+      "match_mode": "prefix",
+      "area_code": "VENTAS"
+    },
+    {
+      "cost_center_code": "10040",
+      "match_mode": "exact",
+      "area_code": "VENTAS"
+    },
+    {
+      "cost_center_code": "A1255",
+      "match_mode": "prefix",
+      "area_code": "VENTAS"
+    },
+    {
+      "cost_center_code": "A0404",
+      "match_mode": "prefix",
+      "area_code": "VENTAS"
+    },
+    {
+      "cost_center_code": "A0114",
+      "match_mode": "prefix",
+      "area_code": "VENTAS"
+    },
+    {
+      "cost_center_code": "A0000000",
+      "match_mode": "exact",
+      "area_code": "ADMFIN"
+    },
+    {
+      "cost_center_code": "A0000001",
+      "match_mode": "exact",
+      "area_code": "GER"
+    },
+    {
+      "cost_center_code": "A0101",
+      "match_mode": "prefix",
+      "area_code": "GER"
+    },
+    {
+      "cost_center_code": "A0112",
+      "match_mode": "prefix",
+      "area_code": "GER"
+    },
+    {
+      "cost_center_code": "A0106",
+      "match_mode": "prefix",
+      "area_code": "GH"
+    },
+    {
+      "cost_center_code": "A0109",
+      "match_mode": "prefix",
+      "area_code": "LEGAL"
+    },
+    {
+      "cost_center_code": "A0110",
+      "match_mode": "prefix",
+      "area_code": "LOG"
+    },
+    {
+      "cost_center_code": "A0113",
+      "match_mode": "prefix",
+      "area_code": "COMERCIAL"
+    },
+    {
+      "cost_center_code": "A0202",
+      "match_mode": "prefix",
+      "area_code": "COMERCIAL"
+    },
+    {
+      "cost_center_code": "A0202001",
+      "match_mode": "exact",
+      "area_code": "ECOM"
+    },
+    {
+      "cost_center_code": "A0202004",
+      "match_mode": "exact",
+      "area_code": "ECOM"
+    },
+    {
+      "cost_center_code": "A0202005",
+      "match_mode": "exact",
+      "area_code": "ECOM"
+    },
+    {
+      "cost_center_code": "A0202006",
+      "match_mode": "exact",
+      "area_code": "ECOM"
+    },
+    {
+      "cost_center_code": "A0208",
+      "match_mode": "prefix",
+      "area_code": "MKT"
+    },
+    {
+      "cost_center_code": "AECOBIKE",
+      "match_mode": "exact",
+      "area_code": "COMERCIAL"
+    },
+    {
+      "cost_center_code": "A0303",
+      "match_mode": "prefix",
+      "area_code": "ADMFIN"
+    },
+    {
+      "cost_center_code": "A0303001",
+      "match_mode": "exact",
+      "area_code": "CONT"
+    },
+    {
+      "cost_center_code": "NOTCASOR",
+      "match_mode": "exact",
+      "area_code": "CONT"
+    },
+    {
+      "cost_center_code": "A0305",
+      "match_mode": "prefix",
+      "area_code": "ADMFIN"
+    },
+    {
+      "cost_center_code": "A0311",
+      "match_mode": "prefix",
+      "area_code": "ADMFIN"
+    },
+    {
+      "cost_center_code": "A0312",
+      "match_mode": "prefix",
+      "area_code": "ADMFIN"
+    },
+    {
+      "cost_center_code": "A1000000",
+      "match_mode": "exact",
+      "area_code": "ADMFIN"
+    },
+    {
+      "cost_center_code": "A0307",
+      "match_mode": "prefix",
+      "area_code": "TI"
+    },
+    {
+      "cost_center_code": "A0315",
+      "match_mode": "prefix",
+      "area_code": "TI"
+    }
+  ]
+}

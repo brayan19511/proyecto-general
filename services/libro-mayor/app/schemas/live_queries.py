@@ -14,8 +14,9 @@ class LiveQueryRequest(BaseModel):
     date_to: date = Field(examples=["2026-12-31"])
     # Tramos que se consultan a SAP en paralelo.
     split: Literal["month", "day"] = "month"
-    # full = líneas + resumen; summary = solo resumen (liviano, sin límite de líneas).
-    view: Literal["full", "summary"] = "full"
+    # lines = solo líneas (default); summary = solo resumen (liviano, sin límite
+    # de líneas); full = líneas + resumen.
+    view: Literal["lines", "summary", "full"] = "lines"
 
 
 class ClassifiedLineOut(BaseModel):
@@ -44,24 +45,24 @@ class ClassifiedLineOut(BaseModel):
     cost_center_code: str | None
     cost_center_area: str | None
     cost_center_name: str | None
+    # Área de auth a la que está homologado el centro de costo (null = sin homologar).
+    area_id: str | None = None
+    area_name: str | None = None
     sap_created_at: datetime | None
     sap_updated_at: datetime | None
     rule_id: str | None
-    category_code: str | None
-    category_name: str | None
-    subcategory_code: str | None
-    subcategory_name: str | None
-    # Nombre para reportes: el de la regla o, si no tiene, el de la cuenta SAP.
-    report_name: str | None
+    # Nombres de proyecto-05: categoría, subcategoría y nombre para reportes
+    # (el de la regla o, si no tiene, el de la cuenta SAP). null = sin clasificar.
+    codigo: str | None
+    subcodigo: str | None
+    nombre_cuenta: str | None
 
 
 class SummaryRowOut(BaseModel):
     year: int
     month: int
-    category_code: str | None  # null = sin clasificar
-    category_name: str | None
-    subcategory_code: str | None
-    subcategory_name: str | None
+    codigo: str | None  # null = sin clasificar
+    subcodigo: str | None
     lines: int
     amount_local: Decimal
     amount_foreign: Decimal
@@ -75,5 +76,5 @@ class LiveQueryResult(BaseModel):
     chunks: int  # Tramos consultados a SAP.
     lines_total: int
     elapsed_ms: int
-    summary: list[SummaryRowOut]
+    summary: list[SummaryRowOut] | None  # null con view=lines.
     lines: list[ClassifiedLineOut] | None  # null con view=summary.

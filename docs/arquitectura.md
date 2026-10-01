@@ -6,11 +6,12 @@ Este documento describe el objetivo de la plataforma, no funciones implementadas
 
 ## Estado y componentes
 
-Plataforma multiempresa con servicios y despliegues independientes. Auth utiliza Python + FastAPI. Los lenguajes de la API central y servicios futuros se decidirán por proyecto.
+Plataforma multiempresa con servicios y despliegues independientes. Auth, la API central y libro-mayor utilizan Python + FastAPI. El lenguaje de los servicios futuros se decidirá por proyecto.
 
 Componentes previstos:
 - Identidad y acceso: usuarios, empresas, organización, autorización, sesiones y API keys.
 - API central: entrada de clientes, límites generales, enrutamiento y coordinación.
+- Libro mayor / gastos (`services/libro-mayor`, Python + FastAPI): lee SAP Business One HANA en solo lectura, sincroniza y clasifica gastos con reglas, y los consulta filtrados por área. Implementado y publicado en la central (`LIBRO_MAYOR_ENABLED`).
 - Documentos e IA: extracción, validación y análisis de PDFs e imágenes mediante herramientas y proveedores como Gemini u OpenAI.
 - Seguimiento propio: logs, logs_detail y logs_steps locales a cada servicio, con correlación entre llamadas. Sin OpenTelemetry ni plataforma de logs externa obligatoria.
 
@@ -176,7 +177,8 @@ definido.
 Los servicios deshabilitados no recibirán tráfico desde la central.
 Habilitar una integración no concede permisos a usuarios o empresas.
 Implementado en la central: `<SERVICIO>_ENABLED` por configuración (hoy
-`AUTH_ENABLED`) y estado en su schema `gateway` administrable sin reinicio
+`AUTH_ENABLED` y `LIBRO_MAYOR_ENABLED`), timeout por servicio y por ruta,
+respuestas en streaming y estado en su schema `gateway` administrable sin reinicio
 (releído cada 5 s). Deshabilitado, sus rutas responden 503 sin contactarlo y el
 servicio sigue corriendo. Auth solo se deshabilita por configuración. La
 central también mantiene una lista negra de IPs/rangos (`gateway.ip_blocks`,

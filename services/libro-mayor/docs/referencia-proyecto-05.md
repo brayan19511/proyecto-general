@@ -71,10 +71,9 @@ CRUD `/rule`. Permisos: `ledger.sync`, `ledger.view`, `ledger.export`,
 - **Carga completa en memoria** con `.all()` tras `yield_per` y DataFrames
   enteros; revisar volumen antes de decidir pandas.
 
-## Decisiones pendientes derivadas
+## Decisiones derivadas (tomadas)
 
-- ¿Se mantiene pandas para el motor de reglas o una función Python simple por
-  línea? pandas acelera grandes volúmenes pero es una dependencia pesada; se
-  decidirá midiendo el volumen real de una cuenta/mes.
-- ¿Se conserva la infraestructura genérica de jobs (Job/JobBatch/JobItem +
-  Celery) o un `sync_runs` simple? Recomendación: simple al inicio.
+- Motor de reglas: función Python simple por línea (`app/services/classifier.py`),
+  sin pandas (acuerdo del usuario).
+- Trabajos: `sync_runs` y `classification_runs` propios con un worker interno
+  (`python -m app.worker`), sin Celery ni Job/JobBatch/JobItem (acuerdo).

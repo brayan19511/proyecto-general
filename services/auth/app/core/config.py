@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Claims iss (quién emite) y aud (para quién es); los consumidores verifican ambos.
     JWT_ISSUER: str = "auth"
     JWT_AUDIENCE: str = "platform"
-    ACCESS_TOKEN_MINUTES: int = Field(default=15, ge=1, le=60)
+    ACCESS_TOKEN_MINUTES: int = Field(default=15, ge=1, le=180)
 
     # Sesión absoluta desde el login y máximo simultáneo cuando
     # users.max_sessions es NULL (el valor del usuario tiene prioridad).

@@ -297,21 +297,39 @@ class LedgerLine(SapLineColumns, AuditMixin, Base):
 
 
 class ExpenseCategory(AuditMixin, Base):
-    """Categoría de gasto de una empresa, en dos niveles (p. ej. GV08 OPERACIONES
-    → DIFERENCIA EN UNIDADES DE COSTEO). parent_id NULL = categoría; con
-    parent_id = subcategoría de una categoría (no hay tercer nivel).
+    """Categoría de gasto de una empresa, en dos niveles. En la API: codigo
+    (categoría, p. ej. "OPERACIONES GV08") y subcodigo (subcategoría, p. ej.
+    "DIFERENCIA EN UNIDADES DE COSTEO"). parent_id NULL = categoría; con
+    parent_id = subcategoría (no hay tercer nivel).
 
-    El código es único por empresa entre las activas, en ambos niveles. Las
-    reglas apuntan a una categoría o subcategoría: renombrarla no obliga a
+    Se identifican por su nombre (acuerdo, como en proyecto-05): único entre
+    las activas de la empresa (categorías) o de su categoría (subcategorías).
+    Las reglas apuntan a una categoría o subcategoría: renombrarla no obliga a
     reclasificar líneas.
     """
 
     __tablename__ = "expense_categories"
-    __table_args__ = (unique_active("uq_expense_categories_company_code_active", "company_id", "code"),)
+    __table_args__ = (
+        Index(
+            "uq_expense_categories_top_name_active",
+            "company_id",
+            "name",
+            unique=True,
+            postgresql_where=text("parent_id IS NULL AND is_active"),
+            mssql_where=text("parent_id IS NULL AND is_active = 1"),
+        ),
+        Index(
+            "uq_expense_categories_sub_name_active",
+            "parent_id",
+            "name",
+            unique=True,
+            postgresql_where=text("parent_id IS NOT NULL AND is_active"),
+            mssql_where=text("parent_id IS NOT NULL AND is_active = 1"),
+        ),
+    )
 
     company_id: Mapped[str] = mapped_column(String(36))
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("expense_categories.id"))
-    code: Mapped[str] = mapped_column(String(50))
     name: Mapped[str] = mapped_column(String(150))
 
 
@@ -324,8 +342,8 @@ class ExpenseRule(AuditMixin, Base):
     proveedor, descripción y referencias 1–3; amount_min / amount_max comparan
     el importe en moneda local con signo.
     Se evalúan por priority y luego id: gana la primera que cumple.
-    Resultado: category_id y report_name (nombre para reportes; vacío = el
-    nombre de la cuenta SAP). Sin tipo_regla (acuerdo).
+    Resultado: category_id y report_name ("nombre_cuenta" en la API: nombre
+    para reportes; vacío = el nombre de la cuenta SAP). Sin tipo_regla (acuerdo).
     """
 
     __tablename__ = "expense_rules"
@@ -382,3 +400,35 @@ class ClassificationRun(AuditMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     safe_error: Mapped[str | None] = mapped_column(String(500))
     trace_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class CostCenterMapping(AuditMixin, Base):
+    """Homologación: centro de costo SAP → área de auth (acuerdo del usuario).
+
+    Decide QUIÉN ve una línea, no cómo se clasifica: un usuario con
+    ledger.view de alcance area ve solo las líneas cuyos centros están
+    homologados a sus áreas. Un centro pertenece a una sola área (acuerdo).
+    El área se resuelve al consultar: cambiar la homologación no reprocesa.
+
+    match_mode: exact (el código completo) | prefix (todo centro que empiece
+    así, p. ej. V114 → tiendas). Si varias coinciden: exacto > prefijo más
+    largo (acuerdo), así una tienda puede exceptuarse de su prefijo. auth_area_id
+    es el UUID del área en auth (sin FK: otro servicio), validado contra
+    GET /auth/areas al guardar; area_code y area_name son una copia de ese
+    momento para mostrar en reportes (se actualizan al editar la homologación).
+    """
+
+    __tablename__ = "cost_center_mappings"
+    __table_args__ = (
+        # Un exacto y un prefijo con el mismo texto pueden convivir (exacto gana al resolver).
+        unique_active("uq_cost_center_mappings_company_code_mode_active", "company_id", "cost_center_code", "match_mode"),
+        CheckConstraint("match_mode IN ('exact', 'prefix')", name="ck_cost_center_mappings_match_mode"),
+        Index("ix_cost_center_mappings_company_area", "company_id", "auth_area_id"),
+    )
+
+    company_id: Mapped[str] = mapped_column(String(36))
+    cost_center_code: Mapped[str] = mapped_column(String(100))
+    match_mode: Mapped[str] = mapped_column(String(10), default="exact")
+    auth_area_id: Mapped[str] = mapped_column(String(36))
+    area_code: Mapped[str] = mapped_column(String(50))
+    area_name: Mapped[str] = mapped_column(String(150))

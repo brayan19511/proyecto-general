@@ -1,0 +1,162 @@
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.app-sidebar {
+  width: var(--app-sidebar-width);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--app-sidebar-bg);
+  border-right: 1px solid var(--app-border);
+  transition: width 0.2s;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: var(--app-topbar-height);
+  padding: 0 1.25rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.app-brand i {
+  font-size: 1.25rem;
+  color: var(--bs-primary);
+}
+
+.app-nav-group {
+  padding: 0.875rem 0.75rem 0.25rem;
+  font-size: 0.75rem;
+  color: var(--bs-tertiary-color);
+  white-space: nowrap;
+}
+
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--bs-border-radius);
+  color: var(--app-nav-color);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-nav-link i {
+  font-size: 1.05rem;
+}
+
+.app-nav-link:hover {
+  background: var(--bs-secondary-bg);
+  color: var(--bs-body-color);
+}
+
+/* NavLink agrega la clase "active" a la ruta actual. */
+.app-nav-link.active {
+  background: var(--app-nav-active-bg);
+  color: var(--app-nav-active-color);
+}
+
+/* Zona principal */
+.app-main {
+  flex: 1;
+  min-width: 0; /* evita que una tabla ancha empuje el layout */
+  display: flex;
+  flex-direction: column;
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--app-topbar-height);
+  padding: 0 1rem 0 0.5rem;
+  background: var(--bs-body-bg);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.app-content {
+  flex: 1;
+  padding: 1.5rem;
+}
+
+.app-company-select {
+  width: auto;
+  max-width: 14rem;
+}
+
+.app-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--app-nav-active-bg);
+  color: var(--app-nav-active-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Escritorio: sidebar colapsada solo con iconos. */
+@media (min-width: 992px) {
+  .is-collapsed .app-sidebar {
+    width: var(--app-sidebar-collapsed-width);
+  }
+
+  .is-collapsed .app-brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .is-collapsed .app-brand-name,
+  .is-collapsed .app-nav-label,
+  .is-collapsed .app-nav-group {
+    display: none;
+  }
+
+  .is-collapsed .app-nav-link {
+    justify-content: center;
+    margin-bottom: 0.125rem;
+  }
+
+  .app-backdrop {
+    display: none;
+  }
+}
+
+/* Móvil y tablet: la sidebar se superpone al contenido. */
+@media (max-width: 991.98px) {
+  .app-sidebar {
+    position: fixed;
+    left: 0;
+    z-index: 1040;
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+  }
+
+  .is-menu-open .app-sidebar {
+    transform: none;
+  }
+
+  .app-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1030;
+    background: rgb(0 0 0 / 0.4);
+  }
+
+  .app-content {
+    padding: 1rem;
+  }
+}

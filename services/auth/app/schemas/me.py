@@ -50,8 +50,11 @@ class PermissionGrantOut(BaseModel):
 
 
 class CompanyPermissionsResponse(BaseModel):
-    """Permisos efectivos en la empresa del header X-Company-Id."""
+    """Permisos efectivos en la empresa del header X-Company-Id (o de la API key)."""
 
+    # Quién es (con Bearer o X-API-Key): así un consumidor valida identidad y
+    # permisos en una sola llamada. Campo agregado de forma compatible.
+    user_id: str
     company: CompanyOut
     is_platform_admin: bool
     permissions: list[PermissionGrantOut]

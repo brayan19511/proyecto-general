@@ -3,6 +3,8 @@
 Lee las instrucciones raíz (`AGENTS.md`), `docs/arquitectura.md` y, de este
 servicio, `docs/requisitos.md`, `docs/modelo-datos.md` y
 `docs/referencia-proyecto-05.md` antes de proponer o revisar cambios.
+`docs/guia-configuracion.md` tiene el flujo de uso con ejemplos JSON: mantenerlo
+al día cuando cambien rutas o bodies.
 
 ## Estado
 
@@ -16,9 +18,10 @@ fases A, B y C);
 identidad vía auth (`app/api/dependencies.py`). Conexión HANA de solo lectura
 y lector de la vista en `app/sap/`. Pendiente de probar contra HANA real
 (`scripts/check_sap.py`). Categorías, reglas, motor (`classifier.py`),
-reclasificación y consultas en vivo en una llamada (`live_query_service.py`). Sin
-centros de costo/homologación, filtro por áreas ni consultas sobre
-`ledger_lines`.
+reclasificación, consultas en vivo en una llamada (`live_query_service.py`),
+consultas sobre `ledger_lines` (`ledger_query_service.py`) y homologación de
+centros de costo con filtro por áreas (`cost_center_service.py`,
+`require_view_scope`).
 Ver readme.md.
 
 Convenciones del código existente (seguirlas):
@@ -28,6 +31,13 @@ Convenciones del código existente (seguirlas):
   `main.py` los traduce a HTTP.
 - Rutas en `app/api/routes/`: solo dependencias de permiso, schema y llamada al
   servicio. La empresa sale de `ctx.company_id` (validada por auth).
+- Permisos (acuerdo): `ledger.view` < `ledger.update` < `ledger.admin`; cada
+  ruta usa `require_company_permission(*CAN_VIEW | *CAN_UPDATE | *CAN_ADMIN)`.
+  GET = view; reglas/categorías/reclasificar = update; cuentas y sync manual =
+  admin. No crear permisos nuevos sin acordarlo.
+- Identidad: una llamada a `GET /auth/me/permissions` con Bearer o X-API-Key
+  (usa `user_id` de auth). Rutas pensadas para Excel / Power BI: GET con
+  parámetros en la URL y CSV en streaming con su propia sesión.
 - Unicidad "activa" con `unique_active()` (índice filtrado). Validaciones que
   la base no expresa de forma portable (superposición de cuentas) van en el
   servicio, serializadas bloqueando la fila de `sap_companies` de la empresa.
@@ -40,9 +50,14 @@ Convenciones del código existente (seguirlas):
   (`sync_runs`, 202) y nunca consulta SAP. Única excepción (decisión del
   usuario, 2026-09-30): `POST /live-queries` consulta SAP en la misma solicitud,
   por tramos en un pool de hilos compartido (`LIVE_QUERY_PARALLEL`), con tope
-  de líneas y de tiempo, y sin guardar resultados. El worker guarda cada día (datos +
-  avance) en una transacción y registra solo mensajes seguros (tipo y código
+  de líneas y de tiempo, y sin guardar resultados. El worker guarda cada tramo mensual
+  (datos + avance) en una transacción, reintenta lecturas ante fallos de
+  conexión (`SYNC_RETRIES`) y registra solo mensajes seguros (tipo y código
   del error, nunca el texto crudo).
+- Nombres de clasificación en la API (acuerdo): `codigo`, `subcodigo`,
+  `nombre_cuenta` (alias de pydantic sobre `category`/`subcategory`/
+  `report_name`); categorías identificadas por nombre, sin código. El resto de
+  la API y del modelo sigue en inglés.
 - Clasificación: una sola función (`classifier.classify`) para sync,
   reclasificación y consultas en vivo. Cambiar una regla nunca reclasifica en
   el HTTP: registra un `classification_runs` en la misma transacción.
@@ -55,6 +70,9 @@ Convenciones del código existente (seguirlas):
 - Campos que definen el origen de datos ya sincronizados (`code`/`match_mode`
   de una cuenta, `sap_schema` de la compañía) no se editan si hay líneas:
   baja y alta. El resto se edita con PATCH (solo campos enviados + historial).
+- Configuración masiva por la API (`POST /rules/import`), nunca SQL directo
+  en las tablas: el SQL se salta validación, historial, actor y
+  reclasificación.
 - Seed (acuerdo: ruta como auth): `app/seeds/data.py` por código de empresa;
   reutiliza `add_sap_company`/`add_account` en una transacción; no reactiva
   bajas ni modifica lo existente. Python 3.14 (uuid7). No declarar otro
@@ -89,8 +107,12 @@ No copiar `models/` ni `migrations_example/` de la plantilla: son de auth.
   servidor aunque el cliente pida otras).
 - El área de una línea no es el "Area" de SAP (que es el nombre del centro de
   costo): se obtiene de la homologación propia centro de costo → área de auth
-  (acuerdo del usuario). Un centro, una sola área. Coincidencia `exact` ahora,
-  `prefix` previsto. Centro sin homologar o vacío: solo alcance `company`.
+  (acuerdo del usuario). Un centro resuelve a una sola área: `exact` o
+  `prefix`; exacto > prefijo más largo (`CenterMap.resolve`). Centro sin
+  homologar o vacío: solo alcance `company`.
+- Toda ruta que devuelva líneas usa `require_view_scope` y pasa `area_ids` al
+  servicio (`None` = company). Las áreas de un usuario son la unión de las de
+  sus puestos (las calcula auth). Nunca aceptar el área desde el cliente.
 - Reglas: DELETE es baja lógica. Crear, editar o dar de baja una regla genera
   historial (antes/después) en la misma transacción.
 - Las líneas se guardan tal como vienen de SAP (acuerdo): sin corregir textos,
@@ -109,7 +131,9 @@ No copiar `models/` ni `migrations_example/` de la plantilla: son de auth.
 - Logs con `packages/platform-audit` (schema `audit`, columna `service`). No
   registrar credenciales SAP ni cadenas de conexión.
 - Rutas bajo el prefijo `/libro-mayor/...` para que la central enrute sin
-  reescribir. La publicación en la central es un paso posterior y explícito.
+  reescribir. Publicado en la central (lista explícita en
+  `services/apigateway/app/core/public_routes.py`): una ruta nueva no es
+  pública hasta agregarla ahí.
 - PostgreSQL primero; SQL Server por validar; sin SQLite. HANA es solo origen.
 
 ## Verificación

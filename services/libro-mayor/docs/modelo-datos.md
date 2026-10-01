@@ -1,8 +1,8 @@
 # Modelo de datos de libro-mayor
 
-Propuesta en revisión; no hay modelos ni migraciones. Se marcan los
-**acuerdos** del usuario; lo demás son propuestas a confirmar en el paso de
-cada modelo.
+Estado (2026-09-30): implementado en `app/models/entities.py` con sus
+migraciones Alembic (schema `libro_mayor`). Se marcan los **acuerdos** del
+usuario; las secciones marcadas como futuras no están implementadas.
 
 ## Convenciones
 
@@ -119,9 +119,12 @@ registrar el mismo valor; las filas dadas de baja se conservan.
 **Implementado** (revisión `f1cfc1eac2ab`). Acuerdo: catálogo de categorías.
 
 `company_id`, `parent_id` nullable (NULL = categoría; con valor =
-subcategoría; solo dos niveles), `code` (p. ej. `GV08`), `name` (p. ej.
-`OPERACIONES`). Único activo (`company_id`, `code`) en ambos niveles. Se
-edita `code` y `name`; no cambia de nivel ni de padre. Baja: 409 si tiene
+subcategoría; solo dos niveles), `name` (p. ej. `OPERACIONES GV08`). Acuerdo
+(2026-09-30, revisión `7096d47b8a5d`): se identifican por nombre, como en
+proyecto-05; sin `code`. Únicas activas: (`company_id`, `name`) entre las
+categorías y (`parent_id`, `name`) entre las subcategorías de una categoría
+(índices filtrados). En la API: `codigo` = categoría, `subcodigo` =
+subcategoría. Se renombra con `name`; no cambia de nivel ni de padre. Baja: 409 si tiene
 subcategorías o reglas activas. Historial en `change_history`.
 
 ## expense_rules
@@ -131,7 +134,8 @@ subcategorías o reglas activas. Historial en `change_history`.
 `company_id`, `priority`, condiciones (`account_code`, `counter_account_code`,
 `cost_center_code`, `include_text`, `exclude_text`, `amount_min`,
 `amount_max` en `Numeric(19,4)`) y resultado (`category_id` → categoría o
-subcategoría, `report_name`).
+subcategoría, `report_name`: `nombre_cuenta` en la API, etiqueta de la línea
+en reportes, opcional; sin él se usa el nombre de la cuenta SAP).
 
 - Acuerdo: sin `tipo_regla`.
 - Validaciones: al menos una condición; `amount_min <= amount_max` (también
@@ -184,23 +188,28 @@ como vienen (acuerdo). Nunca se borran.
   `centro_costo` son campos distintos (en el export de septiembre 2026 "Area"
   es el nombre del centro).
 
-## cost_centers
-
-Catálogo local de centros de costo SAP. `company_id`, `code` (p. ej.
-`V1141177`), `sap_name` (p. ej. `T65 REAL PLAZA PURUCHUCO I`),
-`first_seen_at`, `last_seen_at`. Único (`company_id`, `code`). Se alimenta al
-sincronizar; origen adicional desde SAP pendiente.
-
 ## cost_center_mappings
 
-Homologación acordada: centro de costo → área de auth.
+**Implementado** (revisión `9d1c3497b704`). Homologación acordada: centro de
+costo → área de auth.
 
 `company_id`, `cost_center_code` (código completo o prefijo), `match_mode`
-(`exact` | `prefix`; acuerdo: la columna existe desde el inicio, primero solo
-se usa `exact`), `auth_area_id` (UUID de auth, sin FK, validado contra auth al
-guardar). Único activo (`company_id`, `cost_center_code`, `match_mode`);
-acuerdo: un centro pertenece a una sola área. Baja lógica e historial
-en `change_history`. Con `prefix`: exacto > prefijo más largo.
+(`exact` | `prefix`, CHECK; prefijo activado 2026-09-30, revisión
+`b3e8f2a61c57`), `auth_area_id` (id del área en auth, sin FK porque es otro
+servicio; validado contra `GET /auth/areas` al guardar), `area_code` y
+`area_name` (copia para mostrar), más `AuditMixin`. Único activo
+(`company_id`, `cost_center_code`, `match_mode`): `V114` exacto y `V114`
+prefijo pueden convivir. Índice (`company_id`, `auth_area_id`). Baja lógica e
+historial en `change_history` (`resource_type = cost_center_mapping`).
+
+Resolución (acuerdo): exacto > prefijo más largo. A diferencia de las cuentas,
+aquí las superposiciones se permiten a propósito: sirven para exceptuar un
+centro de su prefijo. Cada centro resuelve a una sola área.
+
+No hay tabla de catálogo de centros: `GET /cost-centers` los deriva de
+`ledger_lines` (código, nombre SAP, cantidad, última fecha). Un catálogo
+propio o la tabla `OPRC` de SAP quedan como opción futura para homologar
+centros antes de que tengan movimientos.
 
 ## sync_runs
 

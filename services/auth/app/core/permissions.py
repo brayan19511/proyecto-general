@@ -25,4 +25,12 @@ PERMISSIONS: dict[str, list[str]] = {
     "users.read": ["company", "area"],
     # Consultar el historial de cambios de la empresa (GET /history).
     "history.read": ["company"],
+    # Servicio libro-mayor (services/libro-mayor). Cada nivel incluye al anterior
+    # (lo aplica libro-mayor): view consulta; update además modifica reglas y
+    # categorías; admin además cuentas y sincronización manual. view admite area
+    # para cuando exista la homologación de centros de costo (hoy libro-mayor
+    # exige company).
+    "ledger.view": ["company", "area"],
+    "ledger.update": ["company"],
+    "ledger.admin": ["company"],
 }

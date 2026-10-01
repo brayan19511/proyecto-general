@@ -2,13 +2,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from platform_audit import AuditConfig, AuditMiddleware
 
 from app.api.routes import (
     accounts_router,
+    cost_centers_router,
     health_router,
+    ledger_router,
     live_queries_router,
     logs_router,
     rules_router,
@@ -47,7 +50,7 @@ app.add_middleware(
     # Sin cookies: las credenciales viajan en headers.
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Company-Id"],
+    allow_headers=["Content-Type", "Authorization", "X-Company-Id", "X-API-Key"],
 )
 
 # Logs de cada solicitud en el schema audit (paquete compartido platform_audit).
@@ -73,6 +76,11 @@ app.add_middleware(
 
 
 
+# Compresión gzip de respuestas de más de 1 KB (si el cliente la acepta). Va
+# por fuera del middleware de logs: los logs ven el cuerpo sin comprimir.
+# JSON y CSV grandes (líneas) pesan ~10 veces menos en la red.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 @app.exception_handler(ServiceError)
 def service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
     """Errores de negocio de los servicios (app/services/errors.py) → HTTP."""
@@ -84,6 +92,9 @@ api.include_router(health_router.router)
 api.include_router(accounts_router.router)
 api.include_router(sap_company_router.router)
 api.include_router(sync_runs_router.router)
+api.include_router(sync_runs_router.status_router)
+api.include_router(ledger_router.router)
+api.include_router(cost_centers_router.router)
 api.include_router(rules_router.router)
 api.include_router(live_queries_router.router)
 api.include_router(logs_router.router)

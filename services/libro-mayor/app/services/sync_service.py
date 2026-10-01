@@ -7,9 +7,13 @@ Flujo:
      cuenta activa: kind=initial si la cuenta nunca completó un initial/delta,
      kind=delta desde su marca de agua si ya lo hizo.
 2. El worker (app/worker.py) la toma (claim_next) y la procesa (process): por
-   cada día (sync/initial) o de una vez (delta) consulta SAP y guarda sus
+   cada mes (sync/initial) o de una vez (delta) consulta SAP y guarda sus
    líneas + el avance en UNA transacción. Un fallo deja registrado hasta dónde
    llegó.
+   Si SAP o la red fallan al consultar un tramo, se reintenta SYNC_RETRIES
+   veces con espera creciente (SYNC_RETRY_SECONDS, ×4). Es seguro: solo se
+   lee y el guardado no duplica. Si sigue fallando, la ejecución queda
+   failed y el siguiente turno retoma desde la marca de agua.
 3. Repetir no duplica: la clave SAP (company_id, transaccion_id, linea)
    identifica cada línea; si ya existe y SAP la cambió, se actualiza; si es
    igual, no se toca. Por eso el delta puede releer días ya leídos.
@@ -25,7 +29,9 @@ guardarse con las reglas activas en ese momento (classifier.py); si las
 reglas cambian después, lo corrige la reclasificación.
 """
 
+import calendar
 import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
@@ -202,6 +208,43 @@ class SyncService:
             raise NotFoundError("Ejecución no encontrada.")
         return run
 
+    def status(self, company_id: str) -> list[dict]:
+        """Estado de sincronización de cada cuenta activa: para vigilar caídas de SAP o del worker.
+
+        consecutive_failures cuenta las ejecuciones fallidas desde la última
+        correcta: si SAP estuvo caído un día, se ve aquí (4 por día con el
+        horario por defecto) y vuelve a 0 con la primera que termine bien.
+        """
+        now = utcnow()
+        result = []
+        with self.db.begin():
+            accounts = list(self.db.scalars(
+                select(Account).where(Account.company_id == company_id, Account.is_active.is_(True)).order_by(Account.code)
+            ))
+            for account in accounts:
+                runs = select(SyncRun).where(SyncRun.account_id == account.id)
+                last_ok = self.db.scalar(runs.where(SyncRun.status == "succeeded").order_by(SyncRun.finished_at.desc()).limit(1))
+                last = self.db.scalar(runs.order_by(SyncRun.created_at.desc()).limit(1))
+                failed = runs.where(SyncRun.status == "failed")
+                if last_ok is not None:
+                    failed = failed.where(SyncRun.created_at > last_ok.created_at)
+                failures = self.db.scalar(select(func.count()).select_from(failed.subquery()))
+                result.append({
+                    "account_id": account.id,
+                    "code": account.code,
+                    "match_mode": account.match_mode,
+                    "name": account.name,
+                    "watermark": watermark(self.db, account.id),
+                    "last_success_at": last_ok.finished_at if last_ok else None,
+                    "hours_since_success": round((now - last_ok.finished_at).total_seconds() / 3600, 1) if last_ok else None,
+                    "consecutive_failures": failures,
+                    "last_run_id": last.id if last else None,
+                    "last_run_kind": last.kind if last else None,
+                    "last_run_status": last.status if last else None,
+                    "last_error": last.safe_error if last and last.status == "failed" else None,
+                })
+        return result
+
     def list(
         self, company_id: str, *, account_id: str | None, status: str | None, limit: int, offset: int
     ) -> list[SyncRun]:
@@ -213,6 +256,20 @@ class SyncService:
                 query = query.where(SyncRun.status == status)
             query = query.order_by(SyncRun.created_at.desc()).limit(limit).offset(offset)
             return list(self.db.scalars(query))
+
+
+def split_range(date_from: date, date_to: date, split: str) -> list[tuple[date, date]]:
+    """Tramos consecutivos que cubren [date_from, date_to]: días o meses calendario."""
+    chunks = []
+    start = date_from
+    while start <= date_to:
+        if split == "day":
+            end = start
+        else:
+            end = min(date(start.year, start.month, calendar.monthrange(start.year, start.month)[1]), date_to)
+        chunks.append((start, end))
+        start = end + timedelta(days=1)
+    return chunks
 
 
 # --- Horario y marca de agua (worker) -------------------------------------
@@ -366,20 +423,23 @@ def process(db: Session, run_id: str) -> None:
         reader = SapLedgerReader(sap_company.sap_schema, sap_company.source_view)
         accounts = [AccountFilter(account.code, account.match_mode)]
 
-        for offset in range(run.days_total):  # delta: days_total = 1 (una sola consulta).
-            # Consultas a SAP fuera de la transacción local.
-            if run.kind == "delta":
-                label = f"cambios desde {run.date_from}"
-                rows = reader.lines_changed_since(accounts, run.date_from)
-            else:
-                day = run.date_from + timedelta(days=offset)
-                label = str(day)
-                rows = reader.lines_by_posting_date(accounts, day, day)
+        # Tramos: el delta es una sola consulta (days_total = 1); sync e initial
+        # van por mes calendario y days_done suma los días que cubre cada tramo.
+        if run.kind == "delta":
+            parts = [(f"cambios desde {run.date_from}", 1,
+                      lambda: reader.lines_changed_since(accounts, run.date_from))]
+        else:
+            parts = [
+                (f"{a} a {b}", (b - a).days + 1, lambda a=a, b=b: reader.lines_by_posting_date(accounts, a, b))
+                for a, b in split_range(run.date_from, run.date_to, "month")
+            ]
+        for label, days, read in parts:
+            rows = _read_with_retries(read, run_id, label)  # Fuera de la transacción local.
             with db.begin():
                 run = db.get(SyncRun, run_id, with_for_update=True, populate_existing=True)
                 inserted, updated = _save_rows(db, run, actor_id, rows)
                 now = utcnow()
-                run.days_done += 1
+                run.days_done += days
                 run.rows_read += len(rows)
                 run.rows_inserted += inserted
                 run.rows_updated += updated
@@ -398,6 +458,26 @@ def process(db: Session, run_id: str) -> None:
         logger.error("Ejecución %s fallida: %s", run_id, message)
         with db.begin():
             _finish(db.get(SyncRun, run_id), "failed", system_actor_id(db, WORKER), utcnow(), message)
+
+
+def _read_with_retries(read, run_id: str, label: str) -> list[dict]:
+    """Consulta SAP; ante una falla de conexión o de la base SAP reintenta con espera creciente.
+
+    No reintenta datos fuera de contrato (SapDataError): repetir daría lo mismo.
+    """
+    for attempt in range(settings.SYNC_RETRIES + 1):
+        try:
+            return read()
+        except (DBAPIError, OSError) as exc:
+            if attempt == settings.SYNC_RETRIES:
+                raise
+            wait = settings.SYNC_RETRY_SECONDS * 4**attempt
+            logger.warning(
+                "Ejecución %s (%s): SAP falló (%s); reintento %s de %s en %s s",
+                run_id, label, safe_message(exc), attempt + 1, settings.SYNC_RETRIES, wait,
+            )
+            time.sleep(wait)
+    raise AssertionError("inalcanzable")
 
 
 def _save_rows(db: Session, run: SyncRun, actor_id: str, rows: list[dict]) -> tuple[int, int]:
