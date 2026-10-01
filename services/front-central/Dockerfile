@@ -1,8 +1,9 @@
 # Front central: build de Vite servido por nginx (solo archivos estáticos).
-# El navegador llama directo a la central (API Gateway); este contenedor no hace
-# de proxy (la central vería la IP del contenedor y no la del usuario).
+# nginx no reenvía la API: en Docker lo hace el proxy de borde (services/edge),
+# que sirve front y API en el mismo origen. Build: VITE_API_URL=/ (mismo origen).
 #
-#   docker compose up -d --build front-central   (desde services/apigateway)
+#   docker compose --env-file ../../services/apigateway/.env up -d --build front-central
+#   (desde desarrollo/plataforma-completa)
 
 # --- 1. Compilar ---
 FROM node:22-alpine AS build

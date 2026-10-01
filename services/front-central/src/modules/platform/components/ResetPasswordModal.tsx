@@ -2,6 +2,7 @@ import { useState } from 'react'
 import FormModal from '../../../shared/components/FormModal'
 import { errorMessage } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
+import { copyText } from '../../../shared/utils/clipboard'
 import { TEMP_PASSWORD_MIN, generatePassword } from '../../../shared/utils/password'
 import * as usersService from '../services/usersService'
 import type { AdminUser } from '../types'
@@ -29,12 +30,9 @@ export default function ResetPasswordModal({ user, onClose }: { user: AdminUser;
   }
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(password)
-      toast.info('Contraseña copiada')
-    } catch {
-      toast.warning('No se pudo copiar: selecciónala y cópiala a mano.')
-    }
+    // copyText funciona también por HTTP en la red (sin navigator.clipboard).
+    if (await copyText(password)) toast.info('Contraseña copiada')
+    else toast.warning('No se pudo copiar: selecciónala y cópiala a mano.')
   }
 
   return (

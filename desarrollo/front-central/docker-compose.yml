@@ -1,0 +1,26 @@
+# Desarrollo del front solo, en su contenedor nginx (como en producción).
+# Para editar con recarga en caliente es más cómodo `npm run dev` en
+# services/front-central; esto sirve para probar el build real.
+#
+#   docker compose up -d --build   (desde desarrollo/front-central)
+#
+# Llama a una central ya corriendo (por defecto la de plataforma-completa, 8001).
+# Agregar http://localhost:3001 a CORS_ORIGINS de esa central.
+
+name: dev-front-central
+
+services:
+  front-central:
+    image: front-central:dev
+    build:
+      context: ../../services/front-central
+      args:
+        # URL de la central vista desde el navegador (se fija en el build).
+        VITE_API_URL: ${DEV_API_URL:-http://localhost:8001}
+    environment:
+      # Origen permitido en la CSP para llamar a la central (el mismo).
+      API_ORIGIN: ${DEV_API_URL:-http://localhost:8001}
+    # 3001 para no chocar con `npm run dev` (3000).
+    ports:
+      - "127.0.0.1:${DEV_FRONT_PORT:-3001}:80"
+    restart: unless-stopped

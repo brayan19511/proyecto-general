@@ -56,7 +56,7 @@ Servicios publicados (registro en `app/core/services.py`):
 3. `services.py`: su entrada en `SERVICES` (prefijo, URL, timeout, rutas,
    `panel_managed`). El reenvío y el cliente HTTP salen de ahí.
 4. `app/core/audit.py`: campos sensibles propios de sus bodies, si los tiene.
-5. `docker-compose.yml`: sus contenedores, su red exclusiva con la central
+5. `desarrollo/plataforma-completa/docker-compose.yml`: sus contenedores, su red exclusiva con la central
    (subred fija en su `TRUSTED_PROXIES`) y `<SERVICIO>_URL`.
 6. `.env.template` y esta tabla.
 
@@ -90,22 +90,52 @@ variables de entorno). Las respuestas se guardan solo con error (≥ 400).
 | Local sin Docker | 127.0.0.1 | 127.0.0.1 | `["127.0.0.1"]` (solo desarrollo) |
 | Docker Desktop | gateway de Docker (172.x.0.1), igual para todos | IP del contenedor de la central | rango de la red exclusiva |
 | Servidor con Nginx | IP de Nginx (la real viene en X-Forwarded-For) | IP de la central | rango de la red exclusiva |
+| Docker detrás de caddy (este compose) | la del cliente que informa caddy (`proxy-net` en `TRUSTED_PROXIES`); en Docker Desktop es la del host | IP de la central | rango de la red exclusiva |
 
 ### Docker: redes
 
-`docker-compose.yml` levanta db, pgAdmin, auth y la central:
+`desarrollo/plataforma-completa/docker-compose.yml` levanta db, pgAdmin, auth, libro-mayor, la central, el front y caddy:
 
 | Red | Quién | Para qué |
 | --- | --- | --- |
 | `edge` | central | publica `127.0.0.1:${GATEWAY_PORT:-8001}` (solo esta máquina) |
 | `auth-net` (172.30.0.0/24, `internal`) | central, auth | única red en la que auth confía (`TRUSTED_PROXIES`) |
 | `data` | db, pgAdmin, auth, central | base de datos |
+| `proxy-net` (172.32.0.0/24, `internal`) | caddy (172.32.0.10), central, front, pgAdmin | caddy llega a cada uno por su alias `*.proxy`; la central solo confía en el `X-Forwarded-For` que llega por esta red |
 
 - Auth no publica puertos: desde fuera solo se llega a través de la central.
 - La central llama a `http://auth.internal:8000`: ese alias existe solo en
   `auth-net`, así la conexión sale siempre desde la IP confiable. Por `data`
   auth también es alcanzable, pero sin confianza (la traza y la IP se ignoran).
 - Confiar en un rango confía en todo contenedor de esa red: no agregar otros servicios a `auth-net`.
+
+### Acceso desde la red (HTTPS con caddy)
+
+Caddy (`services/edge`) es la única entrada desde otros equipos: `/` (front),
+`/auth`, `/libro-mayor` y `/gateway` (la central) y el puerto 8443 (pgAdmin).
+Por ahora en modo `http` (`http://<IP de la PC>/`); con dominio, `dns` (HTTPS). Rechaza solicitudes de más
+de 100 MB (413). La base no se publica a la red (`DB_BIND=127.0.0.1`).
+
+| Variable (`.env`) | Default | Para qué |
+| --- | --- | --- |
+| `EDGE_BIND` | `127.0.0.1` | `0.0.0.0` para entrar desde otros equipos |
+| `SITE_ADDRESS` | `localhost` | nombre o IP con que se entra (debe coincidir con la URL) |
+| `CADDY_TLS` | `http` | `http` = red local sin dominio (`http://<IP>/`, sin cifrado); `internal` = CA propia (solo esta máquina); `dns` = dominio propio + Let's Encrypt (ver `services/edge/README.md`) |
+| `EDGE_HTTP_PORT` / `EDGE_HTTPS_PORT` / `EDGE_PGADMIN_PORT` | 80 / 443 / 8443 | puertos publicados |
+| `GATEWAY_BIND`, `DB_BIND` | `127.0.0.1` | acceso directo (desarrollo); no abrirlos a la red |
+
+Para entrar desde otros equipos: `CADDY_TLS=http` (sin dominio) o `dns` (dominio
+propio, HTTPS); en ninguno hay que instalar nada. Con `internal`, cada equipo tendría que confiar en la CA de Caddy (si
+no, el navegador advierte y el portapapeles no funciona); su raíz se exporta
+así (desde `desarrollo/plataforma-completa`):
+
+```bash
+MSYS_NO_PATHCONV=1 docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
+La CA vive en el volumen `caddy_data`: borrarlo genera otra y hay que volver a
+instalarla. Para DBeaver desde otro equipo: túnel SSH a esta máquina
+(`ssh -L 5432:localhost:5432 usuario@host`), no abrir la base.
 
 ## Administración (`/gateway/admin/...`)
 
@@ -125,14 +155,15 @@ copiar el `access_token`, "Authorize" en http://localhost:8001/docs y llamar a
 | `GET / POST /gateway/admin/ip-blocks`, `DELETE /gateway/admin/ip-blocks/{id}` | Lista negra: listar, bloquear IP o rango (con vencimiento opcional), desbloquear (baja lógica) |
 
 Si un bloqueo deja fuera a quien no debía: `IP_BLOCKS_ENABLED=false` en el `.env`
-y `docker compose restart apigateway`. La API ya impide bloquear tu propia IP.
+y `restart apigateway` (`docker compose --env-file ../../services/apigateway/.env …` desde `desarrollo/plataforma-completa`). La API ya impide bloquear tu propia IP.
 
 Los de auth siguen en `/auth/admin/logs`; se relacionan por `trace_id`.
 
 ## Configuración
 
-Un `.env` en esta carpeta sirve al Compose (db, pgAdmin, auth, central) y a la
-aplicación (ver `.env.template`). La base puede estar en Docker, en tu PC o en
+Un `.env` en esta carpeta sirve al Compose de desarrollo completo
+(`desarrollo/plataforma-completa`, con `--env-file`) y a la aplicación (ver
+`.env.template`). La base puede estar en Docker, en tu PC o en
 la nube: solo cambia `DB_HOST`/`DB_PORT` (desde un contenedor, `localhost` es
 el propio contenedor; usa `host.docker.internal` o `db`).
 
@@ -150,8 +181,10 @@ python -m uvicorn app.main:app --reload --port 8001 --no-proxy-headers
 
 ## Docker
 
-Desde esta carpeta. Usa el `.env` de aquí (base, pgAdmin, puertos) y monta el
-`.env` y `secrets/` de auth y el `.env` de libro-mayor; los valores propios de
+El Compose de desarrollo está en `desarrollo/plataforma-completa` (uno por
+servicio en `desarrollo/<servicio>`, producción en `produccion/`). Usa el `.env`
+de aquí (base, pgAdmin, puertos, binds) con `--env-file` y monta el `.env` y
+`secrets/` de auth y el `.env` de libro-mayor; los valores propios de
 Docker (DB_HOST=db, TRUSTED_PROXIES, AUTH_URL, LIBRO_MAYOR_URL) están en
 `environment` del Compose.
 
@@ -160,13 +193,17 @@ puerto publicado) y `libro-mayor-worker` (sincronización programada y
 reclasificaciones; `restart: unless-stopped`). Su `.env` debe usar el mismo
 `DB_NAME`, `DB_USER` y `DB_PASSWORD` que la base del Compose. La red
 `sap-egress` les da salida hacia SAP HANA. Para publicarlo por la central:
-`LIBRO_MAYOR_ENABLED=true` en el `.env` de aquí y `docker compose restart apigateway`.
+`LIBRO_MAYOR_ENABLED=true` en el `.env` de aquí y `restart apigateway`.
 
 ```powershell
-docker compose up -d --build
-docker compose ps
-docker compose logs -f apigateway auth
+cd ..\..\desarrollo\plataforma-completa
+docker compose --env-file ../../services/apigateway/.env up -d --build
+docker compose --env-file ../../services/apigateway/.env ps
+docker compose --env-file ../../services/apigateway/.env logs -f apigateway auth
 ```
+
+Para no repetir `--env-file`, copiar `services/apigateway/.env` a
+`desarrollo/plataforma-completa/.env` (ignorado por git).
 
 - Detén antes los Uvicorn locales que usen el puerto 8001, o define
   `GATEWAY_PORT=8002` en el `.env`.

@@ -1,0 +1,67 @@
+# Desarrollo de la central sola: su base y el servicio, construidos desde
+# services/apigateway. Reenvía a auth y libro-mayor de desarrollo/auth y
+# desarrollo/libro-mayor (en esta máquina, vía host.docker.internal).
+#
+#   docker compose --env-file ../../services/apigateway/.env up -d --build   (desde desarrollo/apigateway)
+#
+# Puerto 8011 para no chocar con la central de plataforma-completa (8001).
+# Con un front de desarrollo, agregar su origen a CORS_ORIGINS de la central.
+
+name: dev-apigateway
+
+x-apigateway: &apigateway
+  image: apigateway:dev
+  volumes:
+    - ../../services/apigateway/.env:/app/services/apigateway/.env:ro
+  environment:
+    DB_HOST: db
+    DB_PORT: "5432"
+    AUTH_URL: ${DEV_AUTH_URL:-http://host.docker.internal:8000}
+    LIBRO_MAYOR_URL: ${DEV_LIBRO_MAYOR_URL:-http://host.docker.internal:8002}
+    # Clientes directos (sin proxy delante): no confía en X-Forwarded-For.
+    TRUSTED_PROXIES: "[]"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5435}:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  apigateway-migrate:
+    <<: *apigateway
+    build:
+      context: ../..
+      dockerfile: services/apigateway/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # http://localhost:8011/docs
+  apigateway:
+    <<: *apigateway
+    pull_policy: never
+    ports:
+      - "127.0.0.1:${DEV_GATEWAY_PORT:-8011}:8000"
+    depends_on:
+      apigateway-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db:

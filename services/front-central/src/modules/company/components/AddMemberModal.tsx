@@ -3,6 +3,7 @@ import { ApiError } from '../../../shared/api/apiClient'
 import FormModal from '../../../shared/components/FormModal'
 import { errorMessage } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
+import { copyText } from '../../../shared/utils/clipboard'
 import { TEMP_PASSWORD_MIN as MIN_PASSWORD, generatePassword } from '../../../shared/utils/password'
 import * as membersService from '../services/membersService'
 
@@ -72,12 +73,9 @@ export default function AddMemberModal({ onClose, onAdded }: AddMemberModalProps
   }
 
   const copyPassword = async () => {
-    try {
-      await navigator.clipboard.writeText(password)
-      toast.info('Contraseña copiada')
-    } catch {
-      toast.warning('No se pudo copiar: selecciónala y cópiala a mano.')
-    }
+    // copyText funciona también por HTTP en la red (sin navigator.clipboard).
+    if (await copyText(password)) toast.info('Contraseña copiada')
+    else toast.warning('No se pudo copiar: selecciónala y cópiala a mano.')
   }
 
   return (

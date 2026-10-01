@@ -1,0 +1,30 @@
+# Modo "dns": dominio propio + certificado público de Let's Encrypt emitido por
+# desafío DNS-01 (Caddy crea un registro TXT temporal con la API del proveedor).
+# Funciona aunque el servidor solo sea accesible desde la red interna, y ningún
+# equipo instala nada. Caddy renueva solo.
+#
+# Requisitos:
+#   - SITE_ADDRESS = el dominio (p. ej. plataforma.rashperu.com), con un registro
+#     A hacia la IP del servidor (puede ser privada, 192.168.x.x).
+#   - CLOUDFLARE_API_TOKEN: token con permiso "Zone > DNS > Edit" solo para esa zona.
+#   - ACME_EMAIL: correo para avisos de Let's Encrypt (vencimientos).
+
+{
+	admin off
+	email {$ACME_EMAIL}
+	# Proveedor DNS del dominio (módulo incluido en la imagen, ver Dockerfile).
+	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+}
+
+# Snippets comunes: (app), (pgadmin) y (hsts).
+import sites.caddy
+
+# Sin "tls": con acme_dns global, Caddy pide el certificado público por DNS.
+{$SITE_ADDRESS} {
+	import hsts
+	import app
+}
+
+{$SITE_ADDRESS}:8443 {
+	import pgadmin
+}

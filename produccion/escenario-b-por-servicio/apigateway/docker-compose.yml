@@ -1,0 +1,39 @@
+# Escenario B · la central (API Gateway). La despliega su equipo con su versión.
+#   docker compose up -d   (desde esta carpeta, con .env y apigateway.env)
+# Necesita: ../crear-redes.sh, la base, auth y libro-mayor (si está habilitado).
+
+name: plataforma-apigateway
+
+x-apigateway: &apigateway
+  image: ${REGISTRY}/apigateway:${APIGATEWAY_VERSION}
+  env_file: apigateway.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    AUTH_URL: http://auth.internal:8000
+    LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
+    TRUSTED_PROXIES: '["172.32.0.0/24"]' # solo caddy (plataforma-proxy)
+
+services:
+  apigateway-migrate:
+    <<: *apigateway
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  apigateway:
+    <<: *apigateway
+    networks:
+      plataforma-data:
+      plataforma-auth:
+      plataforma-libro-mayor:
+      plataforma-proxy:
+        aliases: [apigateway.proxy]
+    depends_on: { apigateway-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }
+  plataforma-libro-mayor: { external: true }
+  plataforma-proxy: { external: true }

@@ -1,0 +1,76 @@
+# Desarrollo de libro-mayor solo: su base, la API y el worker, construidos desde
+# services/libro-mayor. Necesita un auth corriendo para validar tokens: por
+# defecto el de desarrollo/auth (http://host.docker.internal:8000).
+#
+#   docker compose --env-file ../../services/libro-mayor/.env up -d --build   (desde desarrollo/libro-mayor)
+#
+# Para probar con usuarios reales, el token debe emitirlo ese mismo auth.
+
+name: dev-libro-mayor
+
+x-libro-mayor: &libro-mayor
+  image: libro-mayor:dev
+  volumes:
+    - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
+  environment:
+    DB_HOST: db
+    DB_PORT: "5432"
+    AUTH_URL: ${DEV_AUTH_URL:-http://host.docker.internal:8000}
+  # host.docker.internal también en Linux (en Docker Desktop ya existe).
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5434}:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  libro-mayor-migrate:
+    <<: *libro-mayor
+    build:
+      context: ../..
+      dockerfile: services/libro-mayor/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # API: http://localhost:8002/libro-mayor/docs
+  libro-mayor:
+    <<: *libro-mayor
+    pull_policy: never
+    ports:
+      - "127.0.0.1:${DEV_LIBRO_MAYOR_PORT:-8002}:8000"
+    depends_on:
+      libro-mayor-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Sincronizaciones y reclasificaciones (misma imagen, otro comando).
+  libro-mayor-worker:
+    <<: *libro-mayor
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      disable: true # el HEALTHCHECK de la imagen es el de la API
+    depends_on:
+      libro-mayor-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db:

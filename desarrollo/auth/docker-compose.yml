@@ -1,0 +1,67 @@
+# Desarrollo de auth solo: su base y el servicio, construidos desde services/auth.
+#
+#   docker compose --env-file ../../services/auth/.env up -d --build   (desde desarrollo/auth)
+#
+# --env-file: DB_NAME, DB_USER y DB_PASSWORD de services/auth/.env crean la base
+# de este proyecto; la app lee además ese mismo .env (montado de solo lectura).
+# Proyecto propio (dev-auth): sus contenedores y su volumen no se mezclan con
+# desarrollo/plataforma-completa. Puertos distintos para poder tener ambos.
+
+name: dev-auth
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    # Solo esta máquina; 5433 para no chocar con la base de plataforma-completa.
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5433}:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Migraciones (alembic + schema audit) con la misma imagen; corre y termina.
+  auth-migrate:
+    image: auth:dev
+    build:
+      context: ../..                       # raíz del repo: incluye packages/platform-audit
+      dockerfile: services/auth/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../../services/auth/.env:/app/services/auth/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  auth:
+    image: auth:dev
+    pull_policy: never # la construye auth-migrate
+    # http://localhost:8000/auth/docs. Otros servicios en Docker lo ven como
+    # http://host.docker.internal:8000 (ver desarrollo/libro-mayor).
+    ports:
+      - "127.0.0.1:${DEV_AUTH_PORT:-8000}:8000"
+    volumes:
+      - ../../services/auth/.env:/app/services/auth/.env:ro
+      - ../../services/auth/secrets:/app/services/auth/secrets:ro   # llaves JWT
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+    depends_on:
+      auth-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db:

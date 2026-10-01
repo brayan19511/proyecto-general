@@ -1,0 +1,46 @@
+# Escenario B · libro-mayor (API + worker). Lo despliega su equipo con su versión.
+#   docker compose up -d   (desde esta carpeta, con .env y libro-mayor.env)
+# Necesita: ../crear-redes.sh, la base y auth (para validar tokens).
+
+name: plataforma-libro-mayor
+
+x-libro-mayor: &libro-mayor
+  image: ${REGISTRY}/libro-mayor:${LIBRO_MAYOR_VERSION}
+  env_file: libro-mayor.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    AUTH_URL: http://auth.internal:8000
+    TRUSTED_PROXIES: '["172.31.0.0/24"]' # solo la central
+
+services:
+  libro-mayor-migrate:
+    <<: *libro-mayor
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  libro-mayor:
+    <<: *libro-mayor
+    networks:
+      plataforma-data:
+      plataforma-auth: # para llegar a auth.internal
+      sap-egress:
+      plataforma-libro-mayor:
+        aliases: [libro-mayor.internal]
+    depends_on: { libro-mayor-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+  libro-mayor-worker:
+    <<: *libro-mayor
+    command: ["python", "-m", "app.worker"]
+    networks: [plataforma-data, sap-egress]
+    healthcheck: { disable: true } # el HEALTHCHECK de la imagen es el de la API
+    depends_on: { libro-mayor-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }
+  plataforma-libro-mayor: { external: true }
+  sap-egress: # propia de este compose: salida hacia SAP HANA

@@ -3,6 +3,8 @@
 **/__pycache__/
 **/.pytest_cache/
 **/.env
+# También auth.env, libro-mayor.env… (los *.env.example sí se versionan).
+**/*.env
 **/secrets/
 **/*.db
 **/test-output/

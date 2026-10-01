@@ -1,0 +1,25 @@
+# Modo "http": sin certificado, para una PC compartida en la red local mientras
+# no haya dominio. Nada que instalar en los equipos: se entra con
+# http://<IP o nombre de esta PC>/ (pgAdmin en el puerto 8443, también por HTTP).
+#
+# Sin cifrado: contraseñas y tokens viajan en claro dentro de la red. Usar solo
+# en una red de confianza y pasar al modo "dns" (Caddyfile.dns) cuando haya
+# dominio: es cambiar CADDY_TLS y SITE_ADDRESS, nada más.
+
+{
+	admin off
+	# Sin HTTPS automático ni redirección a HTTPS.
+	auto_https off
+}
+
+# Snippets comunes: (app), (pgadmin) y (hsts).
+import sites.caddy
+
+# Cualquier nombre o IP con que se llegue a esta PC (:80 acepta todos los hosts).
+:80 {
+	import app
+}
+
+:8443 {
+	import pgadmin
+}

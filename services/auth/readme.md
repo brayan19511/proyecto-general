@@ -97,7 +97,7 @@ docker run --rm -p 8001:8000 `
   (`["127.0.0.1"]` en desarrollo sin Docker; el rango de una red exclusiva de la
   central y auth en Docker). Ver services/apigateway/readme.md.
 
-En Compose, auth ya está en `services/apigateway/docker-compose.yml`, sin puertos
+En Compose, auth ya está en `desarrollo/plataforma-completa/docker-compose.yml` (solo, en `desarrollo/auth`), sin puertos
 publicados y accesible solo a través de la central. Ver services/apigateway/readme.md.
 
 ## Documentación

@@ -1,0 +1,198 @@
+# Producción, escenario A: un servidor, un compose, imágenes del registro.
+#
+#   docker compose up -d                       (desde esta carpeta, con .env y env/*.env)
+#   docker compose --profile admin up -d       (además pgAdmin en https://SITE_ADDRESS:8443)
+#
+# Sin "build:": las imágenes las publica el CI de cada servicio en el registro y
+# aquí solo se elige su versión (.env). Actualizar un servicio = cambiar su
+# *_VERSION y `docker compose up -d <servicio>` (su *-migrate corre antes).
+#
+# Variables:
+#   .env           del compose: registro, versiones, dominio y modo de certificado.
+#   env/*.env      de cada contenedor (credenciales y configuración). Ninguno en git.
+#   secrets/auth/  llaves JWT de auth (jwt_private.pem, jwt_public.pem). Fuera de git.
+#
+# Redes (como en desarrollo): solo caddy publica puertos; la central habla con
+# cada servicio por una red interna exclusiva de subred fija (TRUSTED_PROXIES).
+
+name: plataforma
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  # Base en contenedor, con volumen. Alternativa recomendada: una base gestionada
+  # (RDS, Cloud SQL, Azure Database): quitar este servicio y poner DB_HOST en env/*.env.
+  # Respaldos: programar pg_dump fuera de este compose (ver README).
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: *restart
+
+  # --- Migraciones: corren y terminan antes de cada versión nueva ---
+  auth-migrate:
+    image: ${REGISTRY}/auth:${AUTH_VERSION}
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    env_file: env/auth.env
+    environment: { DB_HOST: db, DB_PORT: "5432" }
+    networks: [data]
+    depends_on: { db: { condition: service_healthy } }
+    restart: "no"
+
+  libro-mayor-migrate:
+    image: ${REGISTRY}/libro-mayor:${LIBRO_MAYOR_VERSION}
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    env_file: env/libro-mayor.env
+    environment: { DB_HOST: db, DB_PORT: "5432", AUTH_URL: "http://auth.internal:8000" }
+    networks: [data]
+    depends_on: { db: { condition: service_healthy } }
+    restart: "no"
+
+  apigateway-migrate:
+    image: ${REGISTRY}/apigateway:${APIGATEWAY_VERSION}
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    env_file: env/apigateway.env
+    environment: { DB_HOST: db, DB_PORT: "5432" }
+    networks: [data]
+    depends_on: { db: { condition: service_healthy } }
+    restart: "no"
+
+  # --- Servicios ---
+  auth:
+    image: ${REGISTRY}/auth:${AUTH_VERSION}
+    env_file: env/auth.env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Solo la central (auth-net) puede informar la IP real del cliente.
+      TRUSTED_PROXIES: '["172.30.0.0/24"]'
+    volumes:
+      - ./secrets/auth:/app/services/auth/secrets:ro
+    networks:
+      data:
+      auth-net:
+        aliases: [auth.internal]
+    depends_on: { auth-migrate: { condition: service_completed_successfully } }
+    <<: *restart
+
+  libro-mayor:
+    image: ${REGISTRY}/libro-mayor:${LIBRO_MAYOR_VERSION}
+    env_file: env/libro-mayor.env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000
+      TRUSTED_PROXIES: '["172.31.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      sap-egress:
+      libro-mayor-net:
+        aliases: [libro-mayor.internal]
+    depends_on: { libro-mayor-migrate: { condition: service_completed_successfully } }
+    <<: *restart
+
+  libro-mayor-worker:
+    image: ${REGISTRY}/libro-mayor:${LIBRO_MAYOR_VERSION}
+    command: ["python", "-m", "app.worker"]
+    env_file: env/libro-mayor.env
+    environment: { DB_HOST: db, DB_PORT: "5432", AUTH_URL: "http://auth.internal:8000" }
+    networks: [data, sap-egress]
+    healthcheck: { disable: true } # el HEALTHCHECK de la imagen es el de la API
+    depends_on: { libro-mayor-migrate: { condition: service_completed_successfully } }
+    <<: *restart
+
+  apigateway:
+    image: ${REGISTRY}/apigateway:${APIGATEWAY_VERSION}
+    env_file: env/apigateway.env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000
+      LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
+      # Solo caddy (proxy-net) puede informar la IP real del cliente.
+      TRUSTED_PROXIES: '["172.32.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      libro-mayor-net:
+      proxy-net:
+        aliases: [apigateway.proxy]
+    depends_on: { apigateway-migrate: { condition: service_completed_successfully } }
+    <<: *restart
+
+  # Build con VITE_API_URL=/ (mismo origen): la misma imagen sirve en cualquier dominio.
+  front-central:
+    image: ${REGISTRY}/front-central:${FRONT_VERSION}
+    environment:
+      API_ORIGIN: "'self'"
+    networks:
+      proxy-net:
+        aliases: [front-central.proxy]
+    <<: *restart
+
+  # Única entrada: HTTPS, 100 MB por solicitud, reenvío (services/edge).
+  caddy:
+    image: ${REGISTRY}/edge-caddy:${EDGE_VERSION}
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.${CADDY_TLS:-dns}", "--adapter", "caddyfile"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    env_file:
+      - path: env/edge.env
+        required: false # solo hace falta en modo dns
+    ports:
+      - "${EDGE_BIND:-0.0.0.0}:80:80"
+      - "${EDGE_BIND:-0.0.0.0}:443:443"
+      - "${EDGE_BIND:-0.0.0.0}:8443:8443" # pgAdmin (perfil admin); cerrarlo en el firewall si no se usa
+    volumes:
+      - caddy_data:/data # certificados: no borrar
+      - caddy_config:/config
+    networks:
+      edge:
+      proxy-net:
+        ipv4_address: 172.32.0.10
+    <<: *restart
+
+  # Opcional: docker compose --profile admin up -d
+  pgadmin:
+    image: dpage/pgadmin4:8
+    profiles: [admin]
+    env_file: env/pgadmin.env
+    networks:
+      data:
+      proxy-net:
+        aliases: [pgadmin.proxy]
+    depends_on: { db: { condition: service_healthy } }
+    <<: *restart
+
+networks:
+  edge:
+  data:
+    internal: true # la base no sale a internet
+  auth-net:
+    internal: true
+    ipam: { config: [{ subnet: 172.30.0.0/24 }] }
+  libro-mayor-net:
+    internal: true
+    ipam: { config: [{ subnet: 172.31.0.0/24 }] }
+  proxy-net:
+    internal: true
+    ipam: { config: [{ subnet: 172.32.0.0/24 }] }
+  sap-egress: # salida hacia SAP HANA
+
+volumes:
+  db:
+  caddy_data:
+  caddy_config:

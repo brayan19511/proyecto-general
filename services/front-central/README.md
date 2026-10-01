@@ -20,20 +20,24 @@ npm run dev                  # http://localhost:3000
 
 ## Docker
 
-Se construye y levanta con el resto de la plataforma, desde `services/apigateway`:
+Se construye y levanta con el resto de la plataforma, desde `desarrollo/plataforma-completa`
+(solo: `desarrollo/front-central`; producción: `produccion/`):
 
 ```bash
-docker compose up -d --build front-central
+docker compose --env-file ../../services/apigateway/.env up -d --build front-central
 ```
 
 - Imagen en dos etapas: `node:22-alpine` compila; `nginx:1.27-alpine` sirve
-  `dist/` (sin proxy: el navegador llama a la central).
-- Configuración (en `services/apigateway/.env`):
+  `dist/`. nginx no reenvía la API: eso lo hace caddy (mismo origen).
+- No publica puerto propio: se entra por el proxy de borde (caddy) en
+  `https://SITE_ADDRESS/`, con la API en el mismo origen (sin CORS). Ver
+  `services/apigateway/readme.md` (Acceso desde la red).
+- Configuración (en `services/apigateway/.env`, el `--env-file` del compose):
 
   | Variable | Default | Para qué |
   |---|---|---|
-  | `FRONT_PORT` | `3000` | Puerto local del front. Su origen debe estar en `CORS_ORIGINS`. Choca con `npm run dev` si es el mismo. |
-  | `FRONT_API_URL` | `http://localhost:8001` | URL de la central vista desde el navegador. Se fija al construir (cambiarla exige `docker compose build front-central`) y se permite en la CSP. |
+  | `FRONT_API_URL` | `/` | URL de la API vista desde el navegador; `/` = mismo origen. Se fija al construir (cambiarla exige `docker compose build front-central`). |
+  | `FRONT_CSP_API_ORIGIN` | `'self'` | Origen extra permitido en la CSP para llamar a la API. |
 
 - nginx (`nginx/*.template`): rutas de la SPA a `index.html` sin caché, assets
   con hash en caché un año, gzip, `/healthz` para el healthcheck y cabeceras de

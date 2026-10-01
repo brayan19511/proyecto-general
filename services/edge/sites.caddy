@@ -1,0 +1,46 @@
+# Rutas del borde, comunes a los tres modos. Son snippets: cada Caddyfile.<modo>
+# declara sus sitios (con o sin TLS) e importa estos.
+#
+#   /auth/*, /libro-mayor/*, /gateway/*  → la central
+#   /                                    → el front
+#   puerto 8443                          → pgAdmin (si está levantado)
+#
+# Solo límite de tamaño y reenvío: sin reglas de negocio ni autorización.
+
+(app) {
+	encode zstd gzip
+
+	# Tamaño máximo de una solicitud (subidas incluidas): más grande → 413.
+	# Archivos mayores: subida directa a almacenamiento de objetos, no por la API.
+	request_body {
+		max_size 100MB
+	}
+
+	header -Server
+
+	# La API va a la central por la red interna proxy-net. Caddy pone la IP real
+	# del cliente en X-Forwarded-For (descarta la que traiga el cliente); la
+	# central confía en ella porque esa red está en su TRUSTED_PROXIES.
+	@api path /auth/* /libro-mayor/* /gateway/*
+	handle @api {
+		reverse_proxy apigateway.proxy:8000
+	}
+
+	# Todo lo demás es el front (SPA servida por nginx).
+	handle {
+		reverse_proxy front-central.proxy:80
+	}
+}
+
+# pgAdmin: la base no se expone; pgAdmin llega a ella por la red interna "data".
+(pgadmin) {
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy pgadmin.proxy:80
+}
+
+# Solo en los modos con HTTPS: el navegador usa solo HTTPS en el sitio un año.
+(hsts) {
+	header Strict-Transport-Security "max-age=31536000"
+}

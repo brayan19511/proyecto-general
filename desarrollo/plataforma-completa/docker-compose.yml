@@ -1,17 +1,22 @@
-# Entorno local completo: PostgreSQL, pgAdmin, auth, libro-mayor (API y worker), la API central
-# y el front (front-central).
+# Entorno completo: PostgreSQL, pgAdmin, auth, libro-mayor (API y worker), la API central,
+# el front (front-central) y el proxy de borde con HTTPS (caddy).
 #
-#   docker compose up -d --build          (desde services/apigateway)
+#   docker compose --env-file ../../services/apigateway/.env up -d --build
+#   (desde desarrollo/plataforma-completa; o copiar ese .env aquí como .env y omitir --env-file)
 #
 # Cada imagen se construye una vez, en su contenedor de migración (*-migrate);
 # la app y el worker la reutilizan (pull_policy: never).
 #
-# Variables: .env de esta carpeta (DB_*, PGADMIN_*, puertos e imágenes).
+# Variables del compose (DB_*, PGADMIN_*, puertos, binds e imágenes): el .env de la
+# central (services/apigateway/.env), pasado con --env-file.
 # Cada aplicación lee además su propio .env, montado de solo lectura; los
 # valores de "environment" tienen prioridad y ajustan lo que cambia dentro de Docker.
 #
 # Redes:
-#   edge       la central y el front publican su puerto aquí (solo 127.0.0.1).
+#   edge       redes con puertos publicados: caddy (80/443/8443), la central (desarrollo)
+#              y la base. Cada uno escucha en su *_BIND (127.0.0.1 por defecto).
+#   proxy-net  exclusiva de caddy con la central, el front y pgAdmin, subred fija:
+#              la central confía en ella (TRUSTED_PROXIES) para leer la IP real.
 #   auth-net   exclusiva de la central y auth, subred fija: auth confía en ella
 #              (TRUSTED_PROXIES). Sin salida a internet ni acceso desde fuera.
 #   data       la base; auth, libro-mayor y la central escriben aquí (datos y logs).
@@ -32,8 +37,10 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
       TZ: America/Lima
+    # Por defecto solo esta máquina (DB_BIND=127.0.0.1). Desde la red se entra por
+    # pgAdmin (vía caddy) o por un túnel SSH; no abrir la base directamente.
     ports:
-      - "${DB_PORT}:5432"
+      - "${DB_BIND:-127.0.0.1}:${DB_PORT}:5432"
     volumes:
       - db:/var/lib/postgresql/data
     networks: [data]
@@ -53,9 +60,11 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
-    ports:
-      - "${PGADMIN_PORT}:80"
-    networks: [data]
+    # Sin puerto propio: se entra por caddy en https://SITE_ADDRESS:8443.
+    networks:
+      data:
+      proxy-net:
+        aliases: [pgadmin.proxy]
     depends_on:
       db:
         condition: service_healthy
@@ -72,7 +81,7 @@ services:
       dockerfile: services/auth/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
     volumes:
-      - ../auth/.env:/app/services/auth/.env:ro
+      - ../../services/auth/.env:/app/services/auth/.env:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -89,7 +98,7 @@ services:
       dockerfile: services/apigateway/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
     volumes:
-      - ./.env:/app/services/apigateway/.env:ro
+      - ../../services/apigateway/.env:/app/services/apigateway/.env:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -108,7 +117,7 @@ services:
       dockerfile: services/libro-mayor/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
     volumes:
-      - ../libro-mayor/.env:/app/services/libro-mayor/.env:ro
+      - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -128,8 +137,8 @@ services:
     pull_policy: never
     # Sin "ports": solo la central llega a auth.
     volumes:
-      - ../auth/.env:/app/services/auth/.env:ro
-      - ../auth/secrets:/app/services/auth/secrets:ro
+      - ../../services/auth/.env:/app/services/auth/.env:ro
+      - ../../services/auth/secrets:/app/services/auth/secrets:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"                     # puerto interno de PostgreSQL, no el publicado
@@ -158,7 +167,7 @@ services:
     pull_policy: never
     # Sin "ports": solo la central llega a libro-mayor.
     volumes:
-      - ../libro-mayor/.env:/app/services/libro-mayor/.env:ro
+      - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -189,7 +198,7 @@ services:
     pull_policy: never
     command: ["python", "-m", "app.worker"]
     volumes:
-      - ../libro-mayor/.env:/app/services/libro-mayor/.env:ro
+      - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -210,17 +219,26 @@ services:
     # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
     pull_policy: never
     # Solo accesible desde esta máquina. GATEWAY_PORT en .env si 8001 está ocupado.
+    # Acceso directo para desarrollo (npm run dev). Desde la red se entra por caddy.
     ports:
-      - "127.0.0.1:${GATEWAY_PORT:-8001}:8000"
+      - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_PORT:-8001}:8000"
     volumes:
-      - ./.env:/app/services/apigateway/.env:ro
+      - ../../services/apigateway/.env:/app/services/apigateway/.env:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       AUTH_URL: http://auth.internal:8000
       # Publicar libro-mayor: LIBRO_MAYOR_ENABLED=true en el .env de la central.
       LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
-    networks: [edge, data, auth-net, libro-mayor-net]
+      # Solo caddy (proxy-net) puede informar la IP real del cliente.
+      TRUSTED_PROXIES: '["172.32.0.0/24"]'
+    networks:
+      edge:
+      data:
+      auth-net:
+      libro-mayor-net:
+      proxy-net:
+        aliases: [apigateway.proxy]
     # No depende de auth: arranca y está "ready" aunque auth no esté (responde
     # 502 solo en /auth/*). Sí espera a que su base esté migrada.
     depends_on:
@@ -230,28 +248,57 @@ services:
         condition: service_completed_successfully
 
 
-  # Front (React): nginx con el build estático. El NAVEGADOR llama a la central
-  # (no pasa por aquí), así que no necesita ninguna red interna.
+  # Front (React): nginx con el build estático, detrás de caddy. Front y API
+  # comparten origen (https://SITE_ADDRESS): sin CORS.
   front-central:
     image: ${FRONT_CENTRAL_IMAGE:-front-central:0.1.0}
     build:
-      context: ../front-central
+      context: ../../services/front-central
       args:
-        # URL de la central vista desde el navegador; se fija en el build.
-        VITE_API_URL: ${FRONT_API_URL:-http://localhost:8001}
+        # "/" = mismo origen que el front (caddy reenvía /auth, /libro-mayor y
+        # /gateway a la central). Se fija en el build.
+        VITE_API_URL: ${FRONT_API_URL:-/}
     environment:
-      # Origen permitido en la CSP para las llamadas a la central (el mismo).
-      API_ORIGIN: ${FRONT_API_URL:-http://localhost:8001}
-    # Solo accesible desde esta máquina. Su origen (http://localhost:FRONT_PORT)
-    # debe estar en CORS_ORIGINS del .env de la central.
-    ports:
-      - "127.0.0.1:${FRONT_PORT:-3000}:80"
-    networks: [edge]
+      # Origen extra permitido en la CSP para llamar a la API ('self' = el mismo).
+      API_ORIGIN: "${FRONT_CSP_API_ORIGIN:-'self'}"
+    networks:
+      proxy-net:
+        aliases: [front-central.proxy]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 3s
       retries: 3
+    restart: unless-stopped
+
+  # Proxy de borde: única entrada desde la red (HTTP en la red local o HTTPS con dominio). Solo TLS, límite de
+  # tamaño (100 MB) y reenvío; sin reglas de negocio (ver services/edge).
+  caddy:
+    image: ${EDGE_IMAGE:-edge-caddy:0.1.0}
+    build:
+      context: ../../services/edge
+    # Modo: http (red local sin dominio, nada que instalar; default), internal (CA
+    # propia, solo esta máquina) o dns (dominio propio + Let's Encrypt; requiere
+    # services/edge/.env). Ver services/edge/README.md.
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.${CADDY_TLS:-http}", "--adapter", "caddyfile"]
+    ports:
+      - "${EDGE_BIND:-127.0.0.1}:${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_BIND:-127.0.0.1}:${EDGE_HTTPS_PORT:-443}:443"
+      - "${EDGE_BIND:-127.0.0.1}:${EDGE_PGADMIN_PORT:-8443}:8443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    # ACME_EMAIL y CLOUDFLARE_API_TOKEN (solo modo dns). Opcional en modo internal.
+    env_file:
+      - path: ../../services/edge/.env
+        required: false
+    volumes:
+      - caddy_data:/data       # certificados y la CA interna (no borrar)
+      - caddy_config:/config
+    networks:
+      edge:
+      proxy-net:
+        # IP fija dentro de la subred confiable de la central.
+        ipv4_address: 172.32.0.10
     restart: unless-stopped
 
 networks:
@@ -268,7 +315,14 @@ networks:
       config:
         - subnet: 172.31.0.0/24
   sap-egress:
+  proxy-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.32.0.0/24
 
 volumes:
   db:
     name: db
+  caddy_data:
+  caddy_config:

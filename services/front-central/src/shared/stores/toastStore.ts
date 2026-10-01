@@ -11,11 +11,13 @@ type ToastState = {
 }
 
 const DURATION_MS = 4000
+// Id local de cada aviso. Un contador basta (crypto.randomUUID no existe sin HTTPS).
+let nextId = 0
 
 export const useToastStore = create<ToastState>()((set, get) => ({
   toasts: [],
   show: (kind, message) => {
-    const id = crypto.randomUUID()
+    const id = String(++nextId)
     set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }))
     setTimeout(() => get().dismiss(id), DURATION_MS)
   },

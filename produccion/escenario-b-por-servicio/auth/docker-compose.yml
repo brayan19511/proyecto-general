@@ -1,0 +1,36 @@
+# Escenario B · auth. Lo despliega su equipo con su propia versión.
+#   docker compose up -d   (desde esta carpeta, con .env y auth.env)
+# Necesita: ../crear-redes.sh y la base (../base o una gestionada).
+
+name: plataforma-auth
+
+x-auth: &auth
+  image: ${REGISTRY}/auth:${AUTH_VERSION}
+  env_file: auth.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    # Solo la central (plataforma-auth) puede informar la IP real del cliente.
+    TRUSTED_PROXIES: '["172.30.0.0/24"]'
+
+services:
+  auth-migrate:
+    <<: *auth
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  auth:
+    <<: *auth
+    volumes:
+      - ./secrets:/app/services/auth/secrets:ro # llaves JWT, fuera de git
+    networks:
+      plataforma-data:
+      plataforma-auth:
+        aliases: [auth.internal] # la central y libro-mayor llaman a http://auth.internal:8000
+    depends_on: { auth-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }

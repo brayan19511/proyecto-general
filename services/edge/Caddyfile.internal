@@ -1,0 +1,22 @@
+# Modo "internal": HTTPS con la CA propia de Caddy. Solo para probar en esta
+# máquina (https://localhost): otros equipos tendrían que instalar esa CA. Para
+# la red sin dominio usar "http"; con dominio, "dns".
+
+{
+	# La API de administración de Caddy no se usa.
+	admin off
+}
+
+# Snippets comunes: (app), (pgadmin) y (hsts).
+import sites.caddy
+
+{$SITE_ADDRESS:localhost} {
+	tls internal
+	import hsts
+	import app
+}
+
+{$SITE_ADDRESS:localhost}:8443 {
+	tls internal
+	import pgadmin
+}

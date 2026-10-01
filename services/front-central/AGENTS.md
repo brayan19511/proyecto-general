@@ -75,8 +75,9 @@ central impide bloquear la propia IP), ambos con su historial de la central.
 Fase 1 completa. Contenedor: `Dockerfile` (node → nginx), `nginx/*.template`
 (SPA, caché, gzip, CSP y cabeceras de seguridad con `${API_ORIGIN}`),
 `docker/05-check-env.sh` y servicio `front-central` en
-`services/apigateway/docker-compose.yml` (`FRONT_PORT`, `FRONT_API_URL`).
-El navegador llama directo a la central: nginx no hace de proxy. La CSP no
+`desarrollo/plataforma-completa/docker-compose.yml` (`FRONT_API_URL=/`), sin puerto propio:
+detrás del proxy de borde (caddy), que sirve front y API en el mismo origen
+(HTTPS, 100 MB por solicitud). nginx del front no reenvía la API. La CSP no
 admite scripts ni estilos en `<style>`/HTML en línea: no agregarlos (los
 `style={...}` de React sí funcionan).
 Pendiente técnico: el build supera 500 kB en un solo archivo; dividir con
@@ -123,6 +124,11 @@ servicios, dependencias ni configuración de Docker de pasos futuros.
   (`issuedAt`). Nunca renovar sin el candado: el refresh es rotativo y auth
   revoca la sesión si se reutiliza. Cerrar sesión en una pestaña la cierra en
   todas.
+- Funciona también sin HTTPS (red local por HTTP, modo `http` del borde): no
+  depender de APIs de contexto seguro sin alternativa. Hoy: `copyText`
+  (`shared/utils/clipboard.ts`) en lugar de `navigator.clipboard`, ids sin
+  `crypto.randomUUID` y candado de renovación en `localStorage` (solo id y
+  vencimiento, nunca tokens) cuando no hay Web Locks.
 - El front no decide la autorización: oculta menús y rutas según
   `/auth/me` (`is_platform_admin`) y `/auth/me/permissions` de la empresa
   activa, pero el backend siempre valida. Un 403 se muestra como

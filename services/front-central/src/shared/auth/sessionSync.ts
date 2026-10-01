@@ -71,9 +71,57 @@ export function askPeers(): Promise<SessionTokens | null> {
   })
 }
 
-// Ejecuta fn con el candado de renovación (una pestaña a la vez). Sin Web Locks
-// (navegador antiguo) se ejecuta directo.
+// Ejecuta fn con el candado de renovación (una pestaña a la vez). Web Locks solo
+// existe en contextos seguros (HTTPS o localhost); por HTTP en la red se usa un
+// candado en localStorage (storageLock).
 export function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
-  if (typeof navigator === 'undefined' || !navigator.locks) return fn()
-  return navigator.locks.request(LOCK_NAME, fn)
+  if (typeof navigator !== 'undefined' && navigator.locks) return navigator.locks.request(LOCK_NAME, fn)
+  return storageLock(fn)
+}
+
+// --- Candado sin Web Locks ---
+// En localStorage va SOLO quién tiene el candado y hasta cuándo, nunca tokens.
+// localStorage es compartido y síncrono entre pestañas del mismo origen: se
+// escribe, se espera un momento y se relee; si otra pestaña escribió a la vez,
+// gana la última y la otra reintenta. El vencimiento evita quedar trabado si una
+// pestaña se cierra con el candado tomado.
+const STORAGE_LOCK_KEY = 'front-central-refresh-lock'
+const STORAGE_LOCK_TTL_MS = 10_000
+const SETTLE_MS = 50
+const TAB_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+type StoredLock = { owner: string; until: number }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function readLock(): StoredLock | null {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_LOCK_KEY) ?? 'null') as StoredLock | null
+  } catch {
+    return null
+  }
+}
+
+async function storageLock<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    localStorage.getItem(STORAGE_LOCK_KEY)
+  } catch {
+    return fn() // sin almacenamiento (modo privado estricto): sin candado
+  }
+  const giveUpAt = Date.now() + STORAGE_LOCK_TTL_MS
+  while (Date.now() < giveUpAt) {
+    const current = readLock()
+    if (!current || current.until < Date.now()) {
+      const mine: StoredLock = { owner: TAB_ID, until: Date.now() + STORAGE_LOCK_TTL_MS }
+      localStorage.setItem(STORAGE_LOCK_KEY, JSON.stringify(mine))
+      await sleep(SETTLE_MS)
+      if (readLock()?.owner === TAB_ID) break // quedó el nuestro
+    }
+    await sleep(100 + Math.random() * 100)
+  }
+  try {
+    return await fn()
+  } finally {
+    if (readLock()?.owner === TAB_ID) localStorage.removeItem(STORAGE_LOCK_KEY)
+  }
 }

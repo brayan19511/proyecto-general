@@ -1,0 +1,45 @@
+# Escenario B · base de datos compartida (PostgreSQL). Cada servicio usa su schema.
+#   docker compose up -d   (desde esta carpeta, con .env; antes ../crear-redes.sh)
+# Alternativa recomendada: base gestionada; entonces esta carpeta no se usa y
+# cada servicio apunta DB_HOST a ella.
+
+name: plataforma-base
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: America/Lima
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks:
+      plataforma-data:
+        # Nombre con que la encuentran los otros composes (DB_HOST=postgres.data).
+        aliases: [postgres.data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Opcional: docker compose --profile admin up -d (entrar por caddy en :8443).
+  pgadmin:
+    image: dpage/pgadmin4:8
+    profiles: [admin]
+    env_file: pgadmin.env
+    networks:
+      plataforma-data:
+      plataforma-proxy:
+        aliases: [pgadmin.proxy]
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-proxy: { external: true }
+
+volumes:
+  db:

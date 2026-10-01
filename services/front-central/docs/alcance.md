@@ -12,7 +12,7 @@ navegador ──> front (nginx, build estático)
 ```
 
 - El front es un contenedor propio en el compose de la central
-  (`services/apigateway/docker-compose.yml`), red `edge`.
+  (`desarrollo/plataforma-completa/docker-compose.yml`), detrás del proxy de borde (`services/edge`).
 - Variable de configuración `VITE_API_URL`: URL base de la central.
   Default en desarrollo: `http://localhost:8001`. Se fija en el build (Vite);
   si se necesita cambiarla sin reconstruir, se evaluará un `config.json`

@@ -1,0 +1,45 @@
+# Escenario B · borde: caddy (HTTPS, única entrada) y el front.
+#   docker compose up -d   (desde esta carpeta, con .env y edge.env)
+# Necesita: ../crear-redes.sh y la central.
+
+name: plataforma-borde
+
+services:
+  # Build con VITE_API_URL=/ (mismo origen): la misma imagen sirve en cualquier dominio.
+  front-central:
+    image: ${REGISTRY}/front-central:${FRONT_VERSION}
+    environment:
+      API_ORIGIN: "'self'"
+    networks:
+      plataforma-proxy:
+        aliases: [front-central.proxy]
+    restart: unless-stopped
+
+  caddy:
+    image: ${REGISTRY}/edge-caddy:${EDGE_VERSION}
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.${CADDY_TLS:-dns}", "--adapter", "caddyfile"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    env_file:
+      - path: edge.env
+        required: false # solo hace falta en modo dns
+    ports:
+      - "${EDGE_BIND:-0.0.0.0}:80:80"
+      - "${EDGE_BIND:-0.0.0.0}:443:443"
+      - "${EDGE_BIND:-0.0.0.0}:8443:8443" # pgAdmin (perfil admin de ../base)
+    volumes:
+      - caddy_data:/data # certificados: no borrar
+      - caddy_config:/config
+    networks:
+      default: # salida a internet (Let's Encrypt, API del DNS)
+      plataforma-proxy:
+        # IP fija dentro de la subred en que confía la central.
+        ipv4_address: 172.32.0.10
+    restart: unless-stopped
+
+networks:
+  plataforma-proxy: { external: true }
+
+volumes:
+  caddy_data:
+  caddy_config:

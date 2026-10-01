@@ -9,7 +9,7 @@ defecto**. Falta activarlo en un entorno real y probar contra HANA.
 1. En `services/apigateway/.env`: `LIBRO_MAYOR_ENABLED=true`. En el Compose,
    `LIBRO_MAYOR_URL` ya apunta a `http://libro-mayor.internal:8000`; fuera de
    Docker, poner la dirección local (p. ej. `http://127.0.0.1:8002`).
-2. `docker compose up -d --build` desde `services/apigateway` (levanta
+2. `docker compose --env-file ../../services/apigateway/.env up -d --build` desde `desarrollo/plataforma-completa` (levanta
    `libro-mayor-migrate`, `libro-mayor` y `libro-mayor-worker`) o, si ya
    estaban arriba, `docker compose restart apigateway`.
 3. Comprobar: `GET http://127.0.0.1:8001/libro-mayor/health` a través de la
@@ -52,7 +52,7 @@ Lista explícita en `services/apigateway/app/core/public_routes.py`
 - La central no autoriza: libro-mayor valida identidad y permisos con auth en
   cada solicitud.
 
-## Contenedores (en `services/apigateway/docker-compose.yml`)
+## Contenedores (en `desarrollo/plataforma-completa/docker-compose.yml`)
 
 | Contenedor | Qué hace | Redes |
 | --- | --- | --- |
