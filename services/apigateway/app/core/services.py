@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db.connection import engine
+from app.core.public_routes import AUTH_ROUTES, LIBRO_MAYOR_ROUTES, Route
 from app.models.entities import ServiceState
 
 @dataclass(frozen=True)
@@ -26,12 +27,28 @@ class ServiceInfo:
     name: str
     enabled_by_config: bool
     panel_managed: bool
+    # Primer segmento de sus rutas (/auth, /libro-mayor). La central reenvía el
+    # path sin reescribirlo: /auth/login en la central es /auth/login en auth.
+    prefix: str = ""
+    url: str | None = None  # Dirección interna (<SERVICIO>_URL).
+    timeout: float = 30  # <SERVICIO>_TIMEOUT_SECONDS; una ruta puede tener el suyo.
+    routes: tuple[Route, ...] = ()  # Rutas publicadas (app/core/public_routes.py).
 
 
 # Un servicio nuevo publicado en la central se agrega aquí, con su
-# <SERVICIO>_ENABLED y su <SERVICIO>_URL en config.py.
+# <SERVICIO>_ENABLED, <SERVICIO>_URL y <SERVICIO>_TIMEOUT_SECONDS en config.py
+# y sus rutas en public_routes.py. El reenvío (app/api/routes/proxy.py) y el
+# cliente HTTP (app/clients/upstream.py) salen de aquí, sin más código.
 SERVICES: dict[str, ServiceInfo] = {
-    "auth": ServiceInfo("auth", enabled_by_config=settings.AUTH_ENABLED, panel_managed=False),
+    "auth": ServiceInfo(
+        "auth", enabled_by_config=settings.AUTH_ENABLED, panel_managed=False,
+        prefix="/auth", url=settings.AUTH_URL, timeout=settings.AUTH_TIMEOUT_SECONDS, routes=AUTH_ROUTES,
+    ),
+    "libro-mayor": ServiceInfo(
+        "libro-mayor", enabled_by_config=settings.LIBRO_MAYOR_ENABLED, panel_managed=True,
+        prefix="/libro-mayor", url=settings.LIBRO_MAYOR_URL, timeout=settings.LIBRO_MAYOR_TIMEOUT_SECONDS,
+        routes=LIBRO_MAYOR_ROUTES,
+    ),
 }
 
 # Último estado leído de la base: {servicio: is_enabled}. Se reemplaza entero

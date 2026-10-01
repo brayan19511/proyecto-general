@@ -26,6 +26,8 @@ base, TTL 5 s) y la **lista negra de IPs**. Pendiente: límites por IP (rate lim
 | --- | --- | --- |
 | `AUTH_ENABLED` | `true` | `false` = `/auth/*` responde 503; no se crea el cliente HTTP ni se abren conexiones hacia auth |
 | `AUTH_URL` | — | Obligatoria solo si `AUTH_ENABLED=true` (validada al arrancar) |
+| `LIBRO_MAYOR_ENABLED` | `false` | `true` = publica `/libro-mayor/*`; con `false` responde 503 y no se crea su cliente HTTP |
+| `LIBRO_MAYOR_URL` | — | Obligatoria solo si `LIBRO_MAYOR_ENABLED=true` |
 
 Aplicar un cambio: editar el `.env` de la central y reiniciar **solo** la central.
 
@@ -35,7 +37,8 @@ docker compose restart apigateway
 
 Medido en local: la central vuelve en ~3 s y auth no se interrumpe. Durante
 esos segundos la central no responde (una sola réplica). Cada servicio nuevo
-publicado sigue el mismo patrón: `<SERVICIO>_ENABLED` + `<SERVICIO>_URL`.
+publicado sigue el mismo patrón: `<SERVICIO>_ENABLED` + `<SERVICIO>_URL` +
+`<SERVICIO>_TIMEOUT_SECONDS` (ver "Publicar un servicio nuevo" en el readme).
 
 Límite de esta etapa: requiere reiniciar la central y editar archivos del
 servidor. La etapa 2 lo resuelve.

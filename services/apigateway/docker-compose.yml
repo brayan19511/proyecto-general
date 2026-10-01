@@ -1,16 +1,24 @@
-# Entorno local completo: PostgreSQL, pgAdmin, auth y la API central.
+# Entorno local completo: PostgreSQL, pgAdmin, auth, libro-mayor (API y worker), la API central
+# y el front (front-central).
 #
 #   docker compose up -d --build          (desde services/apigateway)
+#
+# Cada imagen se construye una vez, en su contenedor de migración (*-migrate);
+# la app y el worker la reutilizan (pull_policy: never).
 #
 # Variables: .env de esta carpeta (DB_*, PGADMIN_*, puertos e imágenes).
 # Cada aplicación lee además su propio .env, montado de solo lectura; los
 # valores de "environment" tienen prioridad y ajustan lo que cambia dentro de Docker.
 #
 # Redes:
-#   edge       la central publica su puerto aquí (solo 127.0.0.1).
+#   edge       la central y el front publican su puerto aquí (solo 127.0.0.1).
 #   auth-net   exclusiva de la central y auth, subred fija: auth confía en ella
 #              (TRUSTED_PROXIES). Sin salida a internet ni acceso desde fuera.
-#   data       la base; auth y la central escriben aquí (auth y logs).
+#   data       la base; auth, libro-mayor y la central escriben aquí (datos y logs).
+#   libro-mayor-net  exclusiva de la central y libro-mayor, subred fija (su
+#              TRUSTED_PROXIES). Sin salida a internet ni acceso desde fuera.
+#   sap-egress salida hacia SAP HANA (fuera de la plataforma) para la API y el
+#              worker de libro-mayor.
 
 # Mismo nombre de proyecto que el Compose anterior (carpeta proyecto-central):
 # reutiliza los contenedores y el volumen existentes en lugar de crear otros.
@@ -52,12 +60,72 @@ services:
       db:
         condition: service_healthy
 
+  # Migraciones: contenedores de un solo uso con la misma imagen de cada app.
+  # En cada "up" aplican lo pendiente (alembic upgrade head + schema audit) y
+  # terminan; la app arranca solo si terminaron bien. Sin cambios pendientes
+  # no hacen nada. Los seeds NO se ejecutan aquí: siguen siendo manuales.
+  # Ver el resultado: docker compose logs auth-migrate apigateway-migrate
+  auth-migrate:
+    image: ${AUTH_IMAGE:-auth:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../auth/.env:/app/services/auth/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+    networks: [data]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  apigateway-migrate:
+    image: ${APIGATEWAY_IMAGE:-apigateway:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/apigateway/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ./.env:/app/services/apigateway/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; no se usa al migrar.
+    networks: [data]
+    restart: "no"
+    depends_on:
+      # Después de auth-migrate: ambos migran el schema audit y no deben hacerlo a la vez.
+      auth-migrate:
+        condition: service_completed_successfully
+
+  libro-mayor-migrate:
+    image: ${LIBRO_MAYOR_IMAGE:-libro-mayor:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/libro-mayor/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../libro-mayor/.env:/app/services/libro-mayor/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; no se usa al migrar.
+    networks: [data]
+    restart: "no"
+    depends_on:
+      # Último de la cadena: también migra el schema audit.
+      apigateway-migrate:
+        condition: service_completed_successfully
+
   auth:
     # Versión fija de la imagen; cambiarla aquí (o con AUTH_IMAGE en .env).
     image: ${AUTH_IMAGE:-auth:0.1.0}
-    build:
-      context: ../..                      # raíz del repo (incluye packages/)
-      dockerfile: services/auth/Dockerfile
+    # La construye auth-migrate (una sola vez): construirla aquí también en paralelo
+    # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
+    pull_policy: never
     # Sin "ports": solo la central llega a auth.
     volumes:
       - ../auth/.env:/app/services/auth/.env:ro
@@ -80,12 +148,67 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully   # Arranca con su base al día.
+
+  libro-mayor:
+    image: ${LIBRO_MAYOR_IMAGE:-libro-mayor:0.1.0}
+    # La construye libro-mayor-migrate (una sola vez): construirla aquí también en paralelo
+    # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
+    pull_policy: never
+    # Sin "ports": solo la central llega a libro-mayor.
+    volumes:
+      - ../libro-mayor/.env:/app/services/libro-mayor/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Pregunta identidad y permisos a auth por auth-net (como la central).
+      AUTH_URL: http://auth.internal:8000
+      # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por libro-mayor-net.
+      TRUSTED_PROXIES: '["172.31.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      sap-egress:
+      libro-mayor-net:
+        # Solo existe en libro-mayor-net: la central lo usa en LIBRO_MAYOR_URL.
+        aliases: [libro-mayor.internal]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      libro-mayor-migrate:
+        condition: service_completed_successfully
+
+  # Sincronización programada y reclasificaciones. Misma imagen; debe estar
+  # siempre levantado (restart). Con SYNC_SCHEDULE=off solo procesa lo manual.
+  libro-mayor-worker:
+    image: ${LIBRO_MAYOR_IMAGE:-libro-mayor:0.1.0}
+    # La construye libro-mayor-migrate (una sola vez): construirla aquí también en paralelo
+    # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ../libro-mayor/.env:/app/services/libro-mayor/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; el worker no llama a auth.
+    networks: [data, sap-egress]
+    healthcheck:
+      disable: true   # El HEALTHCHECK de la imagen es de la API (HTTP); el worker no la sirve.
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      libro-mayor-migrate:
+        condition: service_completed_successfully
 
   apigateway:
     image: ${APIGATEWAY_IMAGE:-apigateway:0.1.0}
-    build:
-      context: ../..
-      dockerfile: services/apigateway/Dockerfile
+    # La construye apigateway-migrate (una sola vez): construirla aquí también en paralelo
+    # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
+    pull_policy: never
     # Solo accesible desde esta máquina. GATEWAY_PORT en .env si 8001 está ocupado.
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8001}:8000"
@@ -95,12 +218,41 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       AUTH_URL: http://auth.internal:8000
-    networks: [edge, data, auth-net]
+      # Publicar libro-mayor: LIBRO_MAYOR_ENABLED=true en el .env de la central.
+      LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
+    networks: [edge, data, auth-net, libro-mayor-net]
     # No depende de auth: arranca y está "ready" aunque auth no esté (responde
-    # 502 solo en /auth/*).
+    # 502 solo en /auth/*). Sí espera a que su base esté migrada.
     depends_on:
       db:
         condition: service_healthy
+      apigateway-migrate:
+        condition: service_completed_successfully
+
+
+  # Front (React): nginx con el build estático. El NAVEGADOR llama a la central
+  # (no pasa por aquí), así que no necesita ninguna red interna.
+  front-central:
+    image: ${FRONT_CENTRAL_IMAGE:-front-central:0.1.0}
+    build:
+      context: ../front-central
+      args:
+        # URL de la central vista desde el navegador; se fija en el build.
+        VITE_API_URL: ${FRONT_API_URL:-http://localhost:8001}
+    environment:
+      # Origen permitido en la CSP para las llamadas a la central (el mismo).
+      API_ORIGIN: ${FRONT_API_URL:-http://localhost:8001}
+    # Solo accesible desde esta máquina. Su origen (http://localhost:FRONT_PORT)
+    # debe estar en CORS_ORIGINS del .env de la central.
+    ports:
+      - "127.0.0.1:${FRONT_PORT:-3000}:80"
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
 
 networks:
   edge:
@@ -110,6 +262,12 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/24
+  libro-mayor-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+  sap-egress:
 
 volumes:
   db:

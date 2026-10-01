@@ -6,9 +6,11 @@ servicios y coordinación. Python + FastAPI, creado desde `services/base`.
 ## Estado
 
 - Paso 1 (hecho): configuración, `GET /health`, `GET /ready` y logs (schema `audit`, `service=apigateway`).
-- Paso 2 (hecho): reenvío a auth (`app/api/routes/auth_proxy.py`).
+- Paso 2 (hecho): reenvío a auth; generalizado (2026-09-30) a varios servicios
+  (`app/api/routes/proxy.py`): auth y libro-mayor.
 - Paso 3 (hecho): `TRUSTED_PROXIES` con IPs o rangos CIDR (auth y `platform-audit`).
-- Compose (hecho): db, pgAdmin, auth y la central, con red exclusiva central–auth.
+- Compose (hecho): db, pgAdmin, auth, libro-mayor (API y worker) y la central,
+  con redes exclusivas central–auth y central–libro-mayor.
 - Módulos, etapa 1 (hecho): `AUTH_ENABLED` por configuración.
 - Administración (hecho): validación de administrador vía `GET /auth/me` y
   `GET /gateway/admin/logs[/{id}]`.
@@ -20,21 +22,43 @@ servicios y coordinación. Python + FastAPI, creado desde `services/base`.
 
 Rutas propias en la raíz (sin prefijo): `/health`, `/ready`, `/docs`.
 `/ready` solo revisa dependencias propias de la central (la base de logs); no
-consulta a auth: si auth cae, la central sigue lista y responde error solo en `/auth/*`.
+consulta a los servicios: si uno cae, la central sigue lista y responde error solo en sus rutas.
 
-## Reenvío a auth
+## Reenvío a los servicios
+
+Servicios publicados (registro en `app/core/services.py`):
+
+| Servicio | Prefijo | Variables | Default | Panel |
+| --- | --- | --- | --- | --- |
+| auth | `/auth` | `AUTH_ENABLED`, `AUTH_URL`, `AUTH_TIMEOUT_SECONDS` | habilitado, 30 s | No (solo configuración) |
+| libro-mayor | `/libro-mayor` | `LIBRO_MAYOR_ENABLED`, `LIBRO_MAYOR_URL`, `LIBRO_MAYOR_TIMEOUT_SECONDS` | **deshabilitado**, 30 s | Sí |
 
 | Qué | Cómo |
 | --- | --- |
-| Rutas publicadas | `PUBLIC_ROUTES` en `auth_proxy.py`: (prefijo, métodos). Lo que no está responde 404 sin llegar a auth. Paths con `.` o `..` se rechazan |
+| Rutas publicadas | `app/core/public_routes.py`: por servicio, `Route(prefijo, métodos, timeout)`. Lo que no está responde 404 sin llegar al servicio. Paths con `.` o `..` se rechazan |
 | Dejar de publicar algo | Borrar/comentar su línea o quitar un método, y redesplegar. Para ser más fino: una línea más específica en lugar de la general |
 | Path | Sin reescribir: `/auth/login` en la central = `/auth/login` en auth |
-| Habilitado | `AUTH_ENABLED` (true). `false`: rutas publicadas responden 503 sin llegar a auth; auth sigue corriendo. Aplicar con `docker compose restart apigateway` |
-| Timeout | `AUTH_TIMEOUT_SECONDS` (30). Agotado: 504. Auth caída: 502. Mensajes genéricos |
+| Habilitado | `<SERVICIO>_ENABLED`. `false`: sus rutas responden 503 sin llegarle; el servicio sigue corriendo. Aplicar con `docker compose restart apigateway`. Los que tienen panel se apagan también desde `/gateway/admin/services` sin reiniciar |
+| Timeout | `<SERVICIO>_TIMEOUT_SECONDS` (30); una ruta puede tener el suyo (`/libro-mayor/live-queries`: 130 s). Agotado: 504. Servicio caído: 502. Mensajes genéricos |
 | Reintentos | Ninguno: una mutación podría haberse aplicado |
-| Headers hacia auth | Lista positiva: Content-Type, Accept, Authorization, X-Company-Id, X-API-Key, X-Seed-Token, User-Agent |
-| Headers de vuelta | Content-Type, Retry-After y el X-Trace-Id de la central |
-| Respuestas de auth | Se devuelven tal cual (401, 429… no son fallas de la central) |
+| Streaming | Todas las respuestas: los bytes pasan a medida que llegan, sin cargarse enteros en memoria (el CSV de libro-mayor). Con streaming, el timeout es la espera para conectar y entre trozos, no la duración total. Si el servicio corta a mitad, la respuesta queda incompleta y el cliente lo detecta |
+| gzip | Se reenvía tal cual: la central pasa el `Accept-Encoding` del cliente y devuelve los bytes sin descomprimir con su `Content-Encoding`. Sin `Accept-Encoding` del cliente pide `identity`. Cada servicio decide si comprime (libro-mayor sí, más de 1 KB; auth no) |
+| Headers hacia el servicio | Lista positiva: Content-Type, Accept, Accept-Encoding, Authorization, X-Company-Id, X-API-Key, X-Seed-Token, User-Agent |
+| Headers de vuelta | Content-Type, Content-Encoding, Content-Length, Content-Disposition, Retry-After y el X-Trace-Id de la central |
+| Respuestas del servicio | Se devuelven tal cual (401, 429… no son fallas de la central) |
+
+### Publicar un servicio nuevo
+
+1. `config.py`: `<SERVICIO>_ENABLED` (false por defecto), `<SERVICIO>_URL` y
+   `<SERVICIO>_TIMEOUT_SECONDS`, más su validación (URL obligatoria si está
+   habilitado).
+2. `public_routes.py`: su lista de rutas (solo lo que debe ser público).
+3. `services.py`: su entrada en `SERVICES` (prefijo, URL, timeout, rutas,
+   `panel_managed`). El reenvío y el cliente HTTP salen de ahí.
+4. `app/core/audit.py`: campos sensibles propios de sus bodies, si los tiene.
+5. `docker-compose.yml`: sus contenedores, su red exclusiva con la central
+   (subred fija en su `TRUSTED_PROXIES`) y `<SERVICIO>_URL`.
+6. `.env.template` y esta tabla.
 
 ### Logs y correlación
 
@@ -50,7 +74,9 @@ los acepta solo porque la conexión viene de su `TRUSTED_PROXIES`. La diferencia
 de `duration_ms` entre ambas filas es el costo de la central y la red.
 
 La central guarda los bodies que reenvía, enmascarados: `app/core/audit.py`
-incluye los campos extra que oculta auth. Al publicar otro servicio, agregar los suyos.
+incluye los campos extra que oculta auth. Al publicar otro servicio, agregar los
+suyos (libro-mayor no lleva secretos en sus bodies: las credenciales SAP son
+variables de entorno). Las respuestas se guardan solo con error (≥ 400).
 
 ### IP del cliente
 
@@ -125,8 +151,16 @@ python -m uvicorn app.main:app --reload --port 8001 --no-proxy-headers
 ## Docker
 
 Desde esta carpeta. Usa el `.env` de aquí (base, pgAdmin, puertos) y monta el
-`.env` y `secrets/` de auth; los valores propios de Docker (DB_HOST=db,
-TRUSTED_PROXIES, AUTH_URL) están en `environment` del Compose.
+`.env` y `secrets/` de auth y el `.env` de libro-mayor; los valores propios de
+Docker (DB_HOST=db, TRUSTED_PROXIES, AUTH_URL, LIBRO_MAYOR_URL) están en
+`environment` del Compose.
+
+libro-mayor en el Compose: `libro-mayor-migrate`, `libro-mayor` (API, sin
+puerto publicado) y `libro-mayor-worker` (sincronización programada y
+reclasificaciones; `restart: unless-stopped`). Su `.env` debe usar el mismo
+`DB_NAME`, `DB_USER` y `DB_PASSWORD` que la base del Compose. La red
+`sap-egress` les da salida hacia SAP HANA. Para publicarlo por la central:
+`LIBRO_MAYOR_ENABLED=true` en el `.env` de aquí y `docker compose restart apigateway`.
 
 ```powershell
 docker compose up -d --build
@@ -137,11 +171,19 @@ docker compose logs -f apigateway auth
 - Detén antes los Uvicorn locales que usen el puerto 8001, o define
   `GATEWAY_PORT=8002` en el `.env`.
 - Nombre de proyecto `proyecto-central`: reutiliza el contenedor y el volumen `db` existentes.
-- Migraciones: paso aparte, no se ejecutan al arrancar (idempotentes):
-  `docker compose run --rm auth sh -c "python -m alembic upgrade head && python scripts/migrate_audit.py"`
-  y `docker compose run --rm apigateway sh -c "python -m alembic upgrade head && python scripts/migrate_audit.py"`.
-- Versiones de imagen: `AUTH_IMAGE` y `APIGATEWAY_IMAGE` en `.env` (default `auth:0.1.0`, `apigateway:0.1.0`).
+- Migraciones automáticas en cada `up`: `auth-migrate` y `apigateway-migrate`
+  (y `libro-mayor-migrate`) son contenedores de un solo uso con la misma imagen
+  que su app. Aplican `alembic upgrade head` y el schema `audit`, y terminan;
+  cada app arranca solo si su migración terminó bien. Van en cadena
+  (auth → apigateway → libro-mayor) porque todos migran `audit`. Sin cambios
+  pendientes no hacen nada. Si una app no arranca, revisar primero
+  `docker compose logs auth-migrate apigateway-migrate libro-mayor-migrate`.
+- Los seeds no son automáticos (acuerdo): tras una base nueva (`down -v`),
+  habilitar `SEED_ENABLED`, ejecutar `POST /auth/seed` y volver a deshabilitarlo.
+- Versiones de imagen: `AUTH_IMAGE`, `APIGATEWAY_IMAGE` y `LIBRO_MAYOR_IMAGE` en `.env` (default `auth:0.1.0`, `apigateway:0.1.0`, `libro-mayor:0.1.0`).
 - `docker compose down` detiene todo; los datos siguen en el volumen `db`.
+  `docker compose down -v` borra también el volumen: la base queda vacía y la
+  siguiente `up` la migra desde cero.
 
 ## Cómo probar
 

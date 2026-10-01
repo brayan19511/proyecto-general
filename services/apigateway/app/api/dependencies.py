@@ -17,7 +17,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from platform_audit import set_actor
 
-from app.clients.auth_client import auth_client
+from app.clients.upstream import clients
 from app.core.tracing import upstream_headers
 
 
@@ -42,6 +42,7 @@ async def require_platform_admin(
             detail="No autenticado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    auth_client = clients.get("auth")
     if auth_client is None:  # AUTH_ENABLED=false: no hay a quién preguntar.
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="El servicio auth está deshabilitado.")
 

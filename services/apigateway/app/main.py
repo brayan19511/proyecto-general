@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from platform_audit import AuditConfig, AuditMiddleware
 
-from app.api.routes import auth_proxy, health_router, ip_blocks_router, logs_router, services_router
-from app.clients.auth_client import auth_client
+from app.api.routes import health_router, ip_blocks_router, logs_router, proxy, services_router
+from app.clients.upstream import close_all
 from app.core.ip_block_middleware import IpBlockMiddleware
 from app.core.refresh import refresh_loop
 from app.core.audit import SENSITIVE_KEY_PARTS, SENSITIVE_KEYS
@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.db.connection import engine
 
 # La central es el borde: sus rutas propias van en la raíz (/health, /ready,
-# /docs). Cada servicio conserva su prefijo (/auth/...) y la central lo
+# /docs). Cada servicio conserva su prefijo (/auth/..., /libro-mayor/...) y la central lo
 # reenviará sin reescribir, así no hay choques.
 PREFIX = ""
 
@@ -27,8 +27,7 @@ async def lifespan(_: FastAPI):
     yield
     refresh.cancel()
     # Al apagar: cierra las conexiones abiertas hacia los servicios.
-    if auth_client is not None:
-        await auth_client.aclose()
+    await close_all()
 
 
 app = FastAPI(
@@ -53,7 +52,8 @@ app.add_middleware(
     # X-Company-Id: empresa activa. X-API-Key: credencial alternativa al Bearer.
     allow_headers=["Content-Type", "Authorization", "X-Company-Id", "X-API-Key"],
     # Headers de respuesta que el JavaScript del cliente puede leer.
-    expose_headers=["X-Trace-Id", "Retry-After"],
+    # Content-Disposition: nombre del archivo en descargas (CSV de libro-mayor).
+    expose_headers=["X-Trace-Id", "Retry-After", "Content-Disposition"],
 )
 
 # Logs de cada solicitud en el schema audit (paquete compartido platform_audit).
@@ -83,7 +83,8 @@ api.include_router(health_router.router)
 api.include_router(logs_router.router)
 api.include_router(services_router.router)
 api.include_router(ip_blocks_router.router)
-# Reenvío a auth: solo las rutas de auth_proxy.PUBLIC_ROUTES.
-api.include_router(auth_proxy.router)
+# Reenvío a los servicios: solo las rutas de app/core/public_routes.py. Va
+# al final: las rutas propias de la central tienen prioridad.
+api.include_router(proxy.router)
 
 app.include_router(api)

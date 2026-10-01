@@ -55,6 +55,18 @@ class Settings(BaseSettings):
     # reintentos: si se agota, la central responde 504.
     AUTH_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
 
+    # Libro mayor / gastos (/libro-mayor/*). Mismo patrón que auth, pero apagado
+    # por defecto: se publica solo cuando se configura. Con false, /libro-mayor/*
+    # responde 503 sin llegar al servicio. También se puede apagar desde el panel
+    # (gateway.service_states) sin reiniciar.
+    LIBRO_MAYOR_ENABLED: bool = False
+    # Dirección INTERNA de libro-mayor. Ejemplos: http://127.0.0.1:8002 (local),
+    # http://libro-mayor.internal:8000 (Compose). Obligatoria si está habilitado.
+    LIBRO_MAYOR_URL: str | None = Field(default=None, pattern=r"^https?://")
+    # Espera por defecto de sus rutas. Las que tardan más tienen su propio
+    # timeout en app/core/public_routes.py (p. ej. /libro-mayor/live-queries).
+    LIBRO_MAYOR_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
+
     # Cada cuántos segundos la central relee de la base el estado de los
     # servicios (gateway.service_states). Un cambio desde la administración
     # aplica en todas las réplicas en ≤ este tiempo, sin reiniciar.
@@ -69,6 +81,8 @@ class Settings(BaseSettings):
     def check_services(self):
         if self.AUTH_ENABLED and not self.AUTH_URL:
             raise ValueError("Con AUTH_ENABLED=true falta AUTH_URL")
+        if self.LIBRO_MAYOR_ENABLED and not self.LIBRO_MAYOR_URL:
+            raise ValueError("Con LIBRO_MAYOR_ENABLED=true falta LIBRO_MAYOR_URL")
         return self
 
     # Las variables del proceso tienen prioridad sobre .env.
