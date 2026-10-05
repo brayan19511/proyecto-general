@@ -34,6 +34,7 @@ este documento registra las decisiones y reglas detrás de cada ruta.
 | `POST /dispatches/{id}/retry` | `notifications.retry` |
 | `GET /messages/{id}/attempts` | `notifications.admin` |
 | `/smtp-accounts/...` | `notifications.admin` |
+| `GET /admin/logs`, `GET /admin/logs/{log_id}` | Admin de plataforma (sin `X-Company-Id`): logs técnicos propios (schema `audit`, `service=notificaciones`) |
 
 Cada nivel incluye al anterior. Con alcance `own` solo se ven y operan
 envíos con `created_by` = el usuario.

@@ -1,0 +1,40 @@
+# Escenario B · canales-venta (lastmiller sobre Ofisis). Lo despliega su equipo con su versión.
+#   docker compose up -d   (desde esta carpeta, con .env y canales-venta.env)
+# Necesita: ../crear-redes.sh, la base y auth (tokens). Sale a Ofisis por ofisis-egress.
+# Primera vez: después de pagos-proveedores (cada *-migrate también migra el
+# schema audit; no correrlos a la vez).
+
+name: plataforma-canales-venta
+
+x-canales-venta: &canales-venta
+  image: ${REGISTRY}/canales-venta:${CANALES_VENTA_VERSION}
+  env_file: canales-venta.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    AUTH_URL: http://auth.internal:8000
+    TRUSTED_PROXIES: '["172.35.0.0/24"]' # solo la central
+
+services:
+  canales-venta-migrate:
+    <<: *canales-venta
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  canales-venta:
+    <<: *canales-venta
+    networks:
+      plataforma-data:
+      plataforma-auth: # para llegar a auth.internal
+      ofisis-egress: # salida hacia Ofisis (SQL Server)
+      plataforma-canales-venta:
+        aliases: [canales-venta.internal]
+    depends_on: { canales-venta-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }
+  plataforma-canales-venta: { external: true }
+  ofisis-egress: # propia de este compose: salida hacia Ofisis

@@ -105,3 +105,17 @@ def require_permission(*permissions: str):
         return ctx
 
     return dependency
+
+
+def require_platform_admin(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> str:
+    """Solo el administrador de plataforma (rutas sin empresa, p. ej. logs).
+
+    Una llamada a GET /auth/me con el Bearer. Devuelve el id del usuario.
+    """
+    if credentials is None:
+        raise _unauthorized()
+    me = _ask_auth("/auth/me", {"authorization": f"Bearer {credentials.credentials}"})
+    set_actor(me["id"])  # Identidad validada por auth: queda en audit.logs.
+    if me.get("is_platform_admin") is not True:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo el administrador de plataforma puede usar esta ruta.")
+    return me["id"]

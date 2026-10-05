@@ -19,6 +19,9 @@ de proyecto-05; los correos los envía `services/notificaciones`.
   opcionales). En dos fases e idempotente: reintentar nunca duplica correos.
   El lote enviado conserva la copia de a quién se envió y sus PDF (retención
   indefinida).
+- **Logs técnicos** (`GET /admin/logs` y `/{log_id}`, solo admin de plataforma,
+  sin `X-Company-Id`): filas propias del schema `audit`
+  (`service=pagos-proveedores`); en el front, Monitoreo › Actividad y logs.
 
 ## Ejecutar en local
 

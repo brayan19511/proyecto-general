@@ -1,0 +1,50 @@
+# Escenario B · sap-operaciones (API + worker). Lo despliega su equipo con su versión.
+#   docker compose up -d   (desde esta carpeta, con .env y sap-operaciones.env)
+# Necesita: ../crear-redes.sh, la base y auth (tokens). Sale al Service Layer por sap-egress.
+# Primera vez: después de canales-venta (cada *-migrate también migra el schema
+# audit; no correrlos a la vez).
+
+name: plataforma-sap-operaciones
+
+x-sap-operaciones: &sap-operaciones
+  image: ${REGISTRY}/sap-operaciones:${SAP_OPERACIONES_VERSION}
+  env_file: sap-operaciones.env
+  environment:
+    DB_HOST: ${DB_HOST:-postgres.data}
+    DB_PORT: "5432"
+    AUTH_URL: http://auth.internal:8000
+    TRUSTED_PROXIES: '["172.36.0.0/24"]' # solo la central
+
+services:
+  sap-operaciones-migrate:
+    <<: *sap-operaciones
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    networks: [plataforma-data]
+    restart: "no"
+
+  sap-operaciones:
+    <<: *sap-operaciones
+    networks:
+      plataforma-data:
+      plataforma-auth: # para llegar a auth.internal
+      sap-egress: # encolar prueba el login en el Service Layer
+      plataforma-sap-operaciones:
+        aliases: [sap-operaciones.internal]
+    depends_on: { sap-operaciones-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+  # Ejecuta los trabajos en cola contra SAP. Siempre levantado (SKIP LOCKED).
+  sap-operaciones-worker:
+    <<: *sap-operaciones
+    command: ["python", "-m", "app.worker"]
+    networks: [plataforma-data, sap-egress]
+    healthcheck: { disable: true } # el HEALTHCHECK de la imagen es el de la API
+    stop_grace_period: 3m # termina el ítem en curso y devuelve el trabajo a la cola
+    depends_on: { sap-operaciones-migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+
+networks:
+  plataforma-data: { external: true }
+  plataforma-auth: { external: true }
+  plataforma-sap-operaciones: { external: true }
+  sap-egress: # propia de este compose: salida hacia el Service Layer

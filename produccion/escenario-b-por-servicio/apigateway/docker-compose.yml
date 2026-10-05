@@ -1,7 +1,7 @@
 # Escenario B · la central (API Gateway). La despliega su equipo con su versión.
 #   docker compose up -d   (desde esta carpeta, con .env y apigateway.env)
 # Necesita: ../crear-redes.sh, la base, auth y los servicios que tenga habilitados
-# (libro-mayor, notificaciones, pagos-proveedores).
+# (libro-mayor, notificaciones, pagos-proveedores, canales-venta, sap-operaciones).
 
 name: plataforma-apigateway
 
@@ -15,6 +15,8 @@ x-apigateway: &apigateway
     LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
     NOTIFICACIONES_URL: http://notificaciones.internal:8000
     PAGOS_PROVEEDORES_URL: http://pagos-proveedores.internal:8000
+    CANALES_VENTA_URL: http://canales-venta.internal:8000
+    SAP_OPERACIONES_URL: http://sap-operaciones.internal:8000
     TRUSTED_PROXIES: '["172.32.0.0/24"]' # solo caddy (plataforma-proxy)
 
 services:
@@ -32,6 +34,8 @@ services:
       plataforma-libro-mayor:
       plataforma-notificaciones:
       plataforma-pagos-proveedores:
+      plataforma-canales-venta:
+      plataforma-sap-operaciones:
       plataforma-proxy:
         aliases: [apigateway.proxy]
     depends_on: { apigateway-migrate: { condition: service_completed_successfully } }
@@ -43,4 +47,6 @@ networks:
   plataforma-libro-mayor: { external: true }
   plataforma-notificaciones: { external: true }
   plataforma-pagos-proveedores: { external: true }
+  plataforma-canales-venta: { external: true }
+  plataforma-sap-operaciones: { external: true }
   plataforma-proxy: { external: true }

@@ -3,6 +3,7 @@ import { LEDGER_ADMIN, useCanAccess } from '../../../shared/auth/access'
 import AsyncState from '../../../shared/components/AsyncState'
 import DataTable, { type Column } from '../../../shared/components/DataTable'
 import StatusBadge from '../../../shared/components/StatusBadge'
+import { saveBlob, toCsv } from '../../../shared/utils/download'
 import { useApi } from '../../../shared/hooks/useApi'
 import { formatDate } from '../../../shared/utils/format'
 import * as orgService from '../../company/services/orgService'
@@ -81,8 +82,20 @@ export default function CostCentersTab() {
             onChange={(e) => setOnlyUnmapped(e.target.checked)} />
           <label htmlFor="cc-unmapped" className="form-check-label">Solo sin homologar</label>
         </div>
+        <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" disabled={rows.length === 0}
+          title="CSV con los centros que se ven (búsqueda y filtro aplicados)"
+          onClick={() => saveBlob(toCsv(rows, [
+            { header: 'Centro de costo', value: (c) => c.cost_center_code ?? '(sin centro)' },
+            { header: 'Nombre en SAP', value: (c) => c.sap_name ?? '' },
+            { header: 'Líneas', value: (c) => c.lines },
+            { header: 'Última fecha', value: (c) => c.last_posting_date ?? '' },
+            { header: 'Área', value: (c) => c.area_name ?? 'Sin homologar' },
+            { header: 'Homologación', value: (c) => (c.match_mode === 'prefix' ? `Prefijo ${c.mapping_code}` : c.match_mode === 'exact' ? 'Código exacto' : '') },
+          ]), 'centros-de-costo.csv')}>
+          <i className="bi bi-download me-1" aria-hidden="true" />Descargar CSV
+        </button>
         {canEdit && (
-          <button type="button" className="btn btn-primary ms-auto" onClick={() => setCreatingFor('')}>
+          <button type="button" className="btn btn-primary" onClick={() => setCreatingFor('')}>
             <i className="bi bi-plus-lg me-1" aria-hidden="true" />
             Nueva homologación
           </button>

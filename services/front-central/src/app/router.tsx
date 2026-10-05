@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router'
 import type { ReactNode } from 'react'
-import { LEDGER_ADMIN, LEDGER_VIEW, NOTIFICATIONS_VIEW, PAYMENTS_VIEW, type AccessRule } from '../shared/auth/access'
+import { LASTMILLER_VIEW, LEDGER_ADMIN, LEDGER_VIEW, NOTIFICATIONS_VIEW, PAYMENTS_VIEW, SAP_VIEW, type AccessRule } from '../shared/auth/access'
 import AppLayout from './layout/AppLayout'
 import { NAV_GROUPS } from './layout/navigation'
 import NotFoundPage from './NotFoundPage'
@@ -43,12 +43,20 @@ import ProfileLayout from '../modules/profile/pages/ProfileLayout'
 import SecurityTab from '../modules/profile/pages/SecurityTab'
 import SessionsTab from '../modules/profile/pages/SessionsTab'
 import ApiKeysTab from '../modules/profile/pages/ApiKeysTab'
+import { CHANNELS, channelPath } from '../modules/lastmiller/channels'
+import ChannelLayout from '../modules/lastmiller/pages/ChannelLayout'
+import HistoryTab from '../modules/lastmiller/components/HistoryTab'
+import ImportsTab from '../modules/lastmiller/components/ImportsTab'
+import SkusTab from '../modules/lastmiller/components/SkusTab'
+import DatabasesPage from '../modules/sap/pages/DatabasesPage'
+import JobDetailPage from '../modules/sap/pages/JobDetailPage'
+import JobsPage from '../modules/sap/pages/JobsPage'
 
 // Provisional: cada ítem del menú sin módulo propio muestra "en construcción",
 // protegido con la misma regla que el menú. Se quita a medida que cada módulo
 // agrega su ruta real (también envuelta en RequireAccess).
 // Rutas que ya tienen su módulo (se declaran abajo).
-const IMPLEMENTED = new Set(['/perfil', '/contabilidad/libro-mayor', '/contabilidad/consulta-sap', '/contabilidad/sincronizacion', '/contabilidad/reglas', '/contabilidad/centros-costo', '/empresa/miembros', '/empresa/areas', '/empresa/roles', '/empresa/historial', '/contabilidad/cuentas', '/plataforma/empresas', '/plataforma/usuarios', '/plataforma/servicios', '/plataforma/ips', '/monitoreo/logs', '/tesoreria/correos', '/plataforma/plantillas', '/plataforma/cuentas-smtp', '/tesoreria/pagos', '/tesoreria/proveedores'])
+const IMPLEMENTED = new Set(['/perfil', '/contabilidad/libro-mayor', '/contabilidad/consulta-sap', '/contabilidad/sincronizacion', '/contabilidad/reglas', '/contabilidad/centros-costo', '/empresa/miembros', '/empresa/areas', '/empresa/roles', '/empresa/historial', '/contabilidad/cuentas', '/plataforma/empresas', '/plataforma/usuarios', '/plataforma/servicios', '/plataforma/ips', '/monitoreo/logs', '/tesoreria/correos', '/plataforma/plantillas', '/plataforma/cuentas-smtp', '/tesoreria/pagos', '/tesoreria/proveedores', ...CHANNELS.map(channelPath), '/sap/trabajos', '/sap/configuracion'])
 
 const pendingRoutes = NAV_GROUPS.flatMap((g) => g.items)
   .filter((item) => !IMPLEMENTED.has(item.path))
@@ -269,6 +277,19 @@ export const router = createBrowserRouter([
           companyRoute('tesoreria/pagos', { anyOf: PAYMENTS_VIEW }, <BatchesPage />),
           companyRoute('tesoreria/pagos/:batchId', { anyOf: PAYMENTS_VIEW }, <BatchDetailPage />),
           companyRoute('tesoreria/proveedores', { anyOf: PAYMENTS_VIEW }, <ProvidersPage />),
+          // SAP › operaciones masivas (/sap: /sap-operaciones lo envía el borde a la API).
+          companyRoute('sap/trabajos', { anyOf: SAP_VIEW }, <JobsPage />),
+          companyRoute('sap/trabajos/:jobId', { anyOf: SAP_VIEW }, <JobDetailPage />),
+          companyRoute('sap/configuracion', { anyOf: SAP_VIEW }, <DatabasesPage />),
+          // Canales de venta › lastmiller (/ventas: /canales-venta lo envía el borde a la API).
+          {
+            ...companyRoute('ventas/lastmiller/:country/:provider', { anyOf: LASTMILLER_VIEW }, <ChannelLayout />),
+            children: [
+              { index: true, element: <SkusTab /> },
+              { path: 'cargas', element: <ImportsTab /> },
+              { path: 'historial', element: <HistoryTab /> },
+            ],
+          },
           ...pendingRoutes,
         ],
       },

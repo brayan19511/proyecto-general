@@ -4,6 +4,7 @@ import AsyncState from '../../../shared/components/AsyncState'
 import ConfirmDialog from '../../../shared/components/ConfirmDialog'
 import DataTable, { type Column } from '../../../shared/components/DataTable'
 import StatusBadge from '../../../shared/components/StatusBadge'
+import { saveBlob, toCsv } from '../../../shared/utils/download'
 import { errorMessage, useApi } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
 import { formatAmount, parseAmount } from '../../../shared/utils/decimal'
@@ -125,8 +126,19 @@ export default function RulesTab() {
             onChange={(e) => setIncludeInactive(e.target.checked)} />
           <label htmlFor="rule-inactive" className="form-check-label">Ver dadas de baja</label>
         </div>
+        <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" disabled={rows.length === 0}
+          title="CSV con las reglas que se ven (búsqueda y filtro aplicados)"
+          onClick={() => saveBlob(toCsv(rows, [
+            { header: 'Prioridad', value: (r) => r.priority },
+            { header: 'Clasifica como', value: (r) => pathOf(r.category_id) },
+            { header: 'Nombre de cuenta', value: (r) => r.nombre_cuenta ?? '' },
+            { header: 'Condiciones', value: (r) => describeConditions(r).join(' | ') },
+            { header: 'Estado', value: (r) => (r.is_active ? 'Activa' : 'De baja') },
+          ]), 'reglas.csv')}>
+          <i className="bi bi-download me-1" aria-hidden="true" />Descargar CSV
+        </button>
         {canEdit && (
-          <button type="button" className="btn btn-primary ms-auto" onClick={() => setEditing({ rule: null })}
+          <button type="button" className="btn btn-primary" onClick={() => setEditing({ rule: null })}
             disabled={!allCategories.some((c) => c.is_active)} title={allCategories.some((c) => c.is_active) ? undefined : 'Primero crea una categoría'}>
             <i className="bi bi-plus-lg me-1" aria-hidden="true" />
             Nueva regla

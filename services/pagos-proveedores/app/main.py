@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from platform_audit import AuditConfig, AuditMiddleware
 
-from app.api.routes import batches_router, health_router, providers_router, settings_router
+from app.api.routes import batches_router, health_router, logs_router, providers_router, settings_router
 from app.clients.auth_client import auth_client
 from app.clients.notifications_client import notifications_client
 from app.core.audit import SENSITIVE_KEY_PARTS, SENSITIVE_KEYS
@@ -80,5 +80,6 @@ api.include_router(health_router.router)
 api.include_router(providers_router.router)
 api.include_router(batches_router.router)
 api.include_router(settings_router.router)
+api.include_router(logs_router.router)
 
 app.include_router(api)

@@ -68,3 +68,22 @@ export type GatewayHistoryEvent = {
   created_at: string
   created_by: string | null
 }
+
+// Resultado común de una carga inicial: códigos creados, ya existentes y dados
+// de baja (el seed nunca los reactiva).
+export type SeedItems = {
+  created: string[]
+  existing: string[]
+  kept_deactivated: string[]
+}
+
+// POST /libro-mayor/admin/seed
+export type LedgerSeedResult = {
+  sap_company: 'created' | 'existing'
+  accounts: SeedItems
+}
+
+// POST /notificaciones/admin/seed
+export type NotificationsSeedResult = {
+  templates: SeedItems
+}

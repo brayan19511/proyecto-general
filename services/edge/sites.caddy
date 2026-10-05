@@ -1,7 +1,9 @@
 # Rutas del borde, comunes a los tres modos. Son snippets: cada Caddyfile.<modo>
 # declara sus sitios (con o sin TLS) e importa estos.
 #
-#   /auth/*, /libro-mayor/*, /notificaciones/*, /pagos-proveedores/*, /gateway/*  → la central
+#   /auth/*, /libro-mayor/*, /notificaciones/*, /pagos-proveedores/*, /canales-venta/*,
+#   /sap-operaciones/*,
+#   /gateway/*                           → la central
 #   /                                    → el front
 #   puerto 8443                          → pgAdmin (si está levantado)
 #
@@ -21,7 +23,7 @@
 	# La API va a la central por la red interna proxy-net. Caddy pone la IP real
 	# del cliente en X-Forwarded-For (descarta la que traiga el cliente); la
 	# central confía en ella porque esa red está en su TRUSTED_PROXIES.
-	@api path /auth/* /libro-mayor/* /notificaciones/* /pagos-proveedores/* /gateway/*
+	@api path /auth/* /libro-mayor/* /notificaciones/* /pagos-proveedores/* /canales-venta/* /sap-operaciones/* /gateway/*
 	handle @api {
 		reverse_proxy apigateway.proxy:8000
 	}

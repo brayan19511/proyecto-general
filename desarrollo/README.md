@@ -7,7 +7,7 @@ a la red solo si se configura (`EDGE_BIND`).
 
 | Carpeta | Proyecto Docker | Qué levanta | Comando (desde la carpeta) |
 |---|---|---|---|
-| `plataforma-completa/` | `proyecto-central` | Todo: db, pgAdmin, auth, libro-mayor (API + worker), notificaciones (API + worker), pagos-proveedores, central, front y caddy | `docker compose --env-file ../../services/apigateway/.env up -d --build` |
+| `plataforma-completa/` | `proyecto-central` | Todo: db, pgAdmin, auth, libro-mayor (API + worker), notificaciones (API + worker), pagos-proveedores, canales-venta, sap-operaciones (API + worker), central, front y caddy | `docker compose --env-file ../../services/apigateway/.env up -d --build` |
 | `auth/` | `dev-auth` | Base propia (5433) + auth (8000) | `docker compose --env-file ../../services/auth/.env up -d --build` |
 | `libro-mayor/` | `dev-libro-mayor` | Base propia (5434) + API (8002) + worker; usa el auth de `auth/` | `docker compose --env-file ../../services/libro-mayor/.env up -d --build` |
 | `notificaciones/` | `dev-notificaciones` | Base propia (5436) + API (8010) + worker; usa el auth de `auth/` | `docker compose --env-file ../../services/notificaciones/.env up -d --build` |
@@ -15,6 +15,12 @@ a la red solo si se configura (`EDGE_BIND`).
 | `apigateway/` | `dev-apigateway` | Base propia (5435) + central (8011); reenvía a `auth/`, `libro-mayor/`, `notificaciones/` y `pagos-proveedores/` | `docker compose --env-file ../../services/apigateway/.env up -d --build` |
 | `front-central/` | `dev-front-central` | El front en nginx (3001), contra una central ya corriendo | `docker compose up -d --build` |
 
+- canales-venta y sap-operaciones solo existen en **Plataforma completa** (no
+  tienen compose propio en esta carpeta). En local también se pueden correr con
+  `python -m uvicorn app.main:app --reload --port 8014` (canales-venta) o
+  `--port 8016` (sap-operaciones), con su entorno en Python 3.14.
+- Lanzar siempre con `--env-file ../../services/apigateway/.env`: sin él, el
+  healthcheck de la base queda sin usuario (`role "-d" does not exist`).
 - **Plataforma completa** es la que se usa a diario: un solo compose, redes
   internas entre servicios y HTTPS por caddy (`https://localhost`). Detalle de
   redes, IP real y acceso desde la red en `services/apigateway/readme.md` y

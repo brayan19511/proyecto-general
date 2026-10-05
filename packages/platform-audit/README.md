@@ -20,7 +20,7 @@ código, instalado en cada servicio Python: si se cambia aquí, todos lo reciben
 | Tabla | Contenido |
 | --- | --- |
 | `audit.logs` | Cabecera: trace_id, operación padre, servicio y versión, método, ruta, estado HTTP, resultado (success/warning/error), IP, user agent, usuario y empresa, inicio, fin y duración |
-| `audit.logs_detail` | Detalles: `request` (parámetros, headers permitidos, body), `response` (mensaje de error si status ≥ 400), `error` (tipo de excepción), `message` (manuales). Con nivel info/success/warning/error |
+| `audit.logs_detail` | Detalles: `request` (parámetros, headers permitidos, body), `response` (status, tipo y body enmascarado, también en éxitos; desde 2026-10-04), `error` (tipo de excepción), `message` (manuales). Con nivel info/success/warning/error |
 | `audit.logs_steps` | Pasos manuales: una fila al empezar y otra al terminar o fallar, con duración |
 
 El schema es de este paquete, no de un servicio. Cada servicio escribe solo sus

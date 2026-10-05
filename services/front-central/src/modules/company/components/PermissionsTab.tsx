@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSessionStore } from '../../../shared/auth/sessionStore'
 import AsyncState from '../../../shared/components/AsyncState'
 import ConfirmDialog from '../../../shared/components/ConfirmDialog'
 import { errorMessage, useApi } from '../../../shared/hooks/useApi'
@@ -19,6 +20,26 @@ export default function PermissionsTab() {
   const [grant, setGrant] = useState<GrantAction | null>(null)
   const [toRevoke, setToRevoke] = useState<{ role: Role; grant: RoleGrant } | null>(null)
   const [busy, setBusy] = useState(false)
+  const isPlatformAdmin = useSessionStore((s) => s.me?.is_platform_admin ?? false)
+  const [syncing, setSyncing] = useState(false)
+  const pending = permissions.filter((p) => !p.loaded)
+
+  // Carga los permisos que auth tiene en su código pero no en su base (antes,
+  // solo con el seed). Lo valida auth: solo el platform admin.
+  const syncCatalog = async () => {
+    setSyncing(true)
+    try {
+      const result = await orgService.syncPermissionCatalog()
+      if (result.created.length > 0) toast.success(`Permisos cargados: ${result.created.join(', ')}`)
+      if (result.inactive.length > 0) toast.error(`Dados de baja en auth, no se reactivan: ${result.inactive.join(', ')}`)
+      if (result.created.length === 0 && result.inactive.length === 0) toast.success('No había permisos pendientes')
+      catalog.reload()
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const activeRoles = (roles.data ?? []).filter((r) => r.is_active)
   const holders = (p: PermissionInfo) =>
@@ -53,8 +74,15 @@ export default function PermissionsTab() {
         <span className="small text-body-secondary">
           {permissions.length > 0 && `${permissions.length} permisos registrados. `}
           Cada permiso existe porque un servicio lo comprueba en su código: se agregan en auth junto con ese
-          servicio (y su seed), no desde aquí. Aquí decides qué roles los tienen y con qué alcance.
+          servicio, no desde aquí. Aquí decides qué roles los tienen y con qué alcance.
         </span>
+        {isPlatformAdmin && pending.length > 0 && (
+          <button type="button" className="btn btn-sm btn-warning text-nowrap ms-auto" disabled={syncing} onClick={syncCatalog}
+            title="Carga en la base de auth los permisos nuevos de su catálogo. No los asigna a ningún rol.">
+            <i className="bi bi-cloud-download me-1" aria-hidden="true" />
+            {syncing ? 'Cargando…' : `Cargar permisos pendientes (${pending.length})`}
+          </button>
+        )}
       </div>
 
       <AsyncState loading={roles.loading || catalog.loading} error={roles.error ?? catalog.error}
@@ -75,8 +103,8 @@ export default function PermissionsTab() {
                         <div>
                           {p.label}
                           {!p.loaded && (
-                            <span className="badge text-bg-warning fw-normal ms-2" title="Está en auth pero no en su base: ejecuta el seed de auth para poder concederlo.">
-                              Falta ejecutar el seed
+                            <span className="badge text-bg-warning fw-normal ms-2" title="Está en el código de auth pero no en su base: el administrador de plataforma debe cargarlo para poder concederlo.">
+                              Pendiente de cargar
                             </span>
                           )}
                         </div>

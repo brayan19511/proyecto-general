@@ -36,6 +36,8 @@ Servicios publicados (registro en `app/core/services.py`):
 | libro-mayor | `/libro-mayor` | `LIBRO_MAYOR_ENABLED`, `LIBRO_MAYOR_URL`, `LIBRO_MAYOR_TIMEOUT_SECONDS` | **deshabilitado**, 30 s | Sí |
 | notificaciones | `/notificaciones` | `NOTIFICACIONES_ENABLED`, `NOTIFICACIONES_URL`, `NOTIFICACIONES_TIMEOUT_SECONDS` | **deshabilitado**, 30 s (`POST /dispatches` 120 s, `POST /smtp-accounts/...` 130 s) | Sí |
 | pagos-proveedores | `/pagos-proveedores` | `PAGOS_PROVEEDORES_ENABLED`, `PAGOS_PROVEEDORES_URL`, `PAGOS_PROVEEDORES_TIMEOUT_SECONDS` | **deshabilitado**, 30 s (`POST /batches...`: crear y enviar lotes, 300 s) | Sí |
+| canales-venta | `/canales-venta` | `CANALES_VENTA_ENABLED`, `CANALES_VENTA_URL`, `CANALES_VENTA_TIMEOUT_SECONDS` | **deshabilitado**, 30 s | Sí |
+| sap-operaciones | `/sap-operaciones` | `SAP_OPERACIONES_ENABLED`, `SAP_OPERACIONES_URL`, `SAP_OPERACIONES_TIMEOUT_SECONDS` | **deshabilitado**, 30 s (vistas previas 120 s, trabajos 60 s) | Sí |
 
 Headers propios de notificaciones (2026-10-01): la central reenvía `Idempotency-Key`
 (y la admite en CORS) y devuelve `X-Content-Type-Options` y `Cache-Control` de

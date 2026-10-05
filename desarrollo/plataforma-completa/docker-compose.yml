@@ -1,5 +1,6 @@
 # Entorno completo: PostgreSQL, pgAdmin, auth, libro-mayor (API y worker),
-# notificaciones (API y worker), pagos-proveedores, la API central, el front (front-central) y el
+# notificaciones (API y worker), pagos-proveedores, canales-venta, sap-operaciones
+# (API y worker), la API central, el front (front-central) y el
 # proxy de borde con HTTPS (caddy).
 #
 #   docker compose --env-file ../../services/apigateway/.env up -d --build
@@ -32,6 +33,13 @@
 #   pagos-proveedores-net  exclusiva de la central y pagos-proveedores, subred fija
 #              172.34.0.0/24 (su TRUSTED_PROXIES). pagos-proveedores también está
 #              en notificaciones-net (crea envíos) y auth-net (valida tokens).
+#   canales-venta-net  exclusiva de la central y canales-venta, subred fija
+#              172.35.0.0/24 (su TRUSTED_PROXIES). canales-venta también está en
+#              auth-net (valida tokens).
+#   ofisis-egress salida hacia Ofisis (SQL Server externo) para canales-venta.
+#   sap-operaciones-net  exclusiva de la central y sap-operaciones, subred fija
+#              172.36.0.0/24 (su TRUSTED_PROXIES). La API y el worker de
+#              sap-operaciones usan sap-egress para llegar al Service Layer.
 
 # Mismo nombre de proyecto que el Compose anterior (carpeta proyecto-central):
 # reutiliza los contenedores y el volumen existentes en lugar de crear otros.
@@ -173,8 +181,46 @@ services:
     networks: [data]
     restart: "no"
     depends_on:
-      # Último de la cadena: también migra el schema audit.
+      # Después de notificaciones-migrate: también migra el schema audit.
       notificaciones-migrate:
+        condition: service_completed_successfully
+
+  canales-venta-migrate:
+    image: ${CANALES_VENTA_IMAGE:-canales-venta:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/canales-venta/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../../services/canales-venta/.env:/app/services/canales-venta/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; no se usa al migrar.
+    networks: [data]
+    restart: "no"
+    depends_on:
+      # Después de pagos-proveedores-migrate: también migra el schema audit.
+      pagos-proveedores-migrate:
+        condition: service_completed_successfully
+
+  sap-operaciones-migrate:
+    image: ${SAP_OPERACIONES_IMAGE:-sap-operaciones:0.1.0}
+    build:
+      context: ../..
+      dockerfile: services/sap-operaciones/Dockerfile
+    command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
+    volumes:
+      - ../../services/sap-operaciones/.env:/app/services/sap-operaciones/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; no se usa al migrar.
+    networks: [data]
+    restart: "no"
+    depends_on:
+      # Último de la cadena: también migra el schema audit.
+      canales-venta-migrate:
         condition: service_completed_successfully
 
   auth:
@@ -350,6 +396,91 @@ services:
       pagos-proveedores-migrate:
         condition: service_completed_successfully
 
+  # Canales de venta (lastmiller): SKU de Rappi y PedidosYa en Ofisis (SQL Server
+  # externo). Sin puerto publicado: solo la central llega a él.
+  canales-venta:
+    image: ${CANALES_VENTA_IMAGE:-canales-venta:0.1.0}
+    # La construye canales-venta-migrate (una sola vez). never = usar la local.
+    pull_policy: never
+    volumes:
+      - ../../services/canales-venta/.env:/app/services/canales-venta/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Identidad y permisos por auth-net (como la central).
+      AUTH_URL: http://auth.internal:8000
+      # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por canales-venta-net.
+      TRUSTED_PROXIES: '["172.35.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      # Salida hacia Ofisis (fuera de la plataforma).
+      ofisis-egress:
+      canales-venta-net:
+        # Solo existe en canales-venta-net: la central lo usa en CANALES_VENTA_URL.
+        aliases: [canales-venta.internal]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      canales-venta-migrate:
+        condition: service_completed_successfully
+
+  # Operaciones SAP: trabajos masivos por Service Layer (API). Sin puerto
+  # publicado: solo la central llega a ella.
+  sap-operaciones:
+    image: ${SAP_OPERACIONES_IMAGE:-sap-operaciones:0.1.0}
+    # La construye sap-operaciones-migrate (una sola vez). never = usar la local.
+    pull_policy: never
+    volumes:
+      - ../../services/sap-operaciones/.env:/app/services/sap-operaciones/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      # Identidad y permisos por auth-net (como la central).
+      AUTH_URL: http://auth.internal:8000
+      # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por sap-operaciones-net.
+      TRUSTED_PROXIES: '["172.36.0.0/24"]'
+    networks:
+      data:
+      auth-net:
+      # Encolar prueba el login en el Service Layer.
+      sap-egress:
+      sap-operaciones-net:
+        # Solo existe en sap-operaciones-net: la central lo usa en SAP_OPERACIONES_URL.
+        aliases: [sap-operaciones.internal]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      sap-operaciones-migrate:
+        condition: service_completed_successfully
+
+  # Ejecuta los trabajos en cola contra SAP. Misma imagen; debe estar siempre
+  # levantado. Varias réplicas pueden convivir (SKIP LOCKED).
+  sap-operaciones-worker:
+    image: ${SAP_OPERACIONES_IMAGE:-sap-operaciones:0.1.0}
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ../../services/sap-operaciones/.env:/app/services/sap-operaciones/.env:ro
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; el worker no llama a auth.
+    networks: [data, sap-egress]
+    healthcheck:
+      disable: true   # El HEALTHCHECK de la imagen es de la API (HTTP); el worker no la sirve.
+    # Al detenerlo termina el ítem en curso (una llamada a SAP, hasta
+    # SAP_REQUEST_TIMEOUT_SECONDS) y devuelve el trabajo a la cola.
+    stop_grace_period: 3m
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      sap-operaciones-migrate:
+        condition: service_completed_successfully
+
   apigateway:
     image: ${APIGATEWAY_IMAGE:-apigateway:0.1.0}
     # La construye apigateway-migrate (una sola vez): construirla aquí también en paralelo
@@ -371,6 +502,10 @@ services:
       NOTIFICACIONES_URL: http://notificaciones.internal:8000
       # Publicar pagos-proveedores: PAGOS_PROVEEDORES_ENABLED=true en el .env de la central.
       PAGOS_PROVEEDORES_URL: http://pagos-proveedores.internal:8000
+      # Publicar canales-venta: CANALES_VENTA_ENABLED=true en el .env de la central.
+      CANALES_VENTA_URL: http://canales-venta.internal:8000
+      # Publicar sap-operaciones: SAP_OPERACIONES_ENABLED=true en el .env de la central.
+      SAP_OPERACIONES_URL: http://sap-operaciones.internal:8000
       # Solo caddy (proxy-net) puede informar la IP real del cliente.
       TRUSTED_PROXIES: '["172.32.0.0/24"]'
     networks:
@@ -380,6 +515,8 @@ services:
       libro-mayor-net:
       notificaciones-net:
       pagos-proveedores-net:
+      canales-venta-net:
+      sap-operaciones-net:
       proxy-net:
         aliases: [apigateway.proxy]
     # No depende de auth: arranca y está "ready" aunque auth no esté (responde
@@ -468,6 +605,17 @@ networks:
     ipam:
       config:
         - subnet: 172.34.0.0/24
+  canales-venta-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.35.0.0/24
+  ofisis-egress:
+  sap-operaciones-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.36.0.0/24
   # Salida hacia servidores SMTP (internet y relays internos). Qué destinos se
   # admiten lo decide notificaciones (SMTP_ALLOWED_PORTS, SMTP_ALLOWED_PRIVATE_NETWORKS).
   smtp-egress:

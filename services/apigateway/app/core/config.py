@@ -87,6 +87,26 @@ class Settings(BaseSettings):
     # app/core/public_routes.py (lectura de PDFs con OCR y envío a notificaciones).
     PAGOS_PROVEEDORES_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
 
+    # Canales de venta (/canales-venta/*; hoy el módulo lastmiller). Mismo patrón:
+    # apagado por defecto, también se apaga desde el panel sin reiniciar.
+    CANALES_VENTA_ENABLED: bool = False
+    # Dirección INTERNA. Ejemplos: http://127.0.0.1:8014 (local),
+    # http://canales-venta.internal:8000 (Compose). Obligatoria si está habilitado.
+    CANALES_VENTA_URL: str | None = Field(default=None, pattern=r"^https?://")
+    # Espera por defecto de sus rutas. Cada consulta abre una conexión nueva a
+    # Ofisis (~1-3 s) más la consulta; 30 s deja margen.
+    CANALES_VENTA_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
+
+    # Operaciones SAP (/sap-operaciones/*): trabajos masivos por Service Layer.
+    # Mismo patrón: apagado por defecto, también se apaga desde el panel.
+    SAP_OPERACIONES_ENABLED: bool = False
+    # Dirección INTERNA. Ejemplos: http://127.0.0.1:8016 (local),
+    # http://sap-operaciones.internal:8000 (Compose). Obligatoria si está habilitado.
+    SAP_OPERACIONES_URL: str | None = Field(default=None, pattern=r"^https?://")
+    # Espera por defecto de sus rutas. Encolar prueba el login en SAP y la vista
+    # previa de conciliaciones lee un Excel: tienen la suya en public_routes.py.
+    SAP_OPERACIONES_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=300)
+
     # Cada cuántos segundos la central relee de la base el estado de los
     # servicios (gateway.service_states). Un cambio desde la administración
     # aplica en todas las réplicas en ≤ este tiempo, sin reiniciar.
@@ -107,6 +127,10 @@ class Settings(BaseSettings):
             raise ValueError("Con NOTIFICACIONES_ENABLED=true falta NOTIFICACIONES_URL")
         if self.PAGOS_PROVEEDORES_ENABLED and not self.PAGOS_PROVEEDORES_URL:
             raise ValueError("Con PAGOS_PROVEEDORES_ENABLED=true falta PAGOS_PROVEEDORES_URL")
+        if self.CANALES_VENTA_ENABLED and not self.CANALES_VENTA_URL:
+            raise ValueError("Con CANALES_VENTA_ENABLED=true falta CANALES_VENTA_URL")
+        if self.SAP_OPERACIONES_ENABLED and not self.SAP_OPERACIONES_URL:
+            raise ValueError("Con SAP_OPERACIONES_ENABLED=true falta SAP_OPERACIONES_URL")
         return self
 
     # Las variables del proceso tienen prioridad sobre .env.

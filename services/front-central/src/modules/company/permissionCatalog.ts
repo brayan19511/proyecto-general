@@ -9,7 +9,7 @@ export type PermissionScope = 'company' | 'area' | 'own'
 export type CatalogPermission = {
   code: string
   scopes: PermissionScope[]
-  loaded: boolean // false: está en el código de auth pero falta ejecutar su seed
+  loaded: boolean // false: está en el código de auth pero falta cargarlo en su base (botón del platform admin)
 }
 
 // Lo que muestra la pantalla: el catálogo + sus textos.
@@ -42,6 +42,8 @@ const GROUPS: Record<string, string> = {
   ledger: 'Libro mayor',
   notifications: 'Notificaciones',
   payments: 'Pago a proveedores',
+  lastmiller: 'Canales de venta (lastmiller)',
+  sap_operations: 'SAP',
 }
 
 const TEXTS: Record<string, { label: string; description: string }> = {
@@ -65,6 +67,11 @@ const TEXTS: Record<string, { label: string; description: string }> = {
   'payments.providers.manage': { label: 'Gestionar proveedores', description: 'Incluye ver. Crear y editar el maestro de proveedores.' },
   'payments.send': { label: 'Enviar pagos', description: 'Incluye ver. Cargar lotes y enviar los avisos de pago a proveedores.' },
   'payments.admin': { label: 'Administrar pagos', description: 'Incluye todo lo anterior.' },
+  'lastmiller.view': { label: 'Ver SKU de canales', description: 'Ver SKU de Rappi y PedidosYa y cuáles tienen promoción.' },
+  'lastmiller.edit': { label: 'Editar SKU de canales', description: 'Incluye ver. Activar o desactivar SKU y dar de alta o baja promociones una por una.' },
+  'sap_operations.view': { label: 'Ver operaciones SAP', description: 'Ver los trabajos masivos en SAP, sus resultados y las bases SAP.' },
+  'sap_operations.execute': { label: 'Ejecutar operaciones SAP', description: 'Incluye ver. Crear, ejecutar, cancelar y reanudar trabajos masivos (acciones y conciliaciones) y administrar las bases SAP.' },
+  'lastmiller.import': { label: 'Cargas masivas de canales', description: 'Incluye todo lo anterior. Cargas masivas de on/off y de promociones de PedidosYa.' },
 }
 
 // Textos de un permiso; si no los hay, su código y el grupo por prefijo.

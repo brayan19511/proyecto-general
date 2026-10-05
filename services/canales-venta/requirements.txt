@@ -1,0 +1,16 @@
+fastapi[standard]
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic-settings==2.15.0
+httpx>=0.28,<1
+SQLAlchemy>=2.0.40,<2.1
+psycopg[binary]>=3.2,<4
+# SQL Server externo (Ofisis). Requiere el driver ODBC del sistema (ver Dockerfile).
+pyodbc>=5.3,<6
+alembic>=1.16,<2
+# Lectura de multipart/form-data en FastAPI (cargas masivas).
+python-multipart>=0.0.20,<0.1
+# Lectura de archivos .xlsx de las cargas masivas.
+openpyxl>=3.1,<4
+# Paquete compartido de logs (schema audit). Ruta relativa: ejecutar pip desde la carpeta del servicio.
+-e ../../packages/platform-audit

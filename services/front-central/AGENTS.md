@@ -85,7 +85,9 @@ Pendiente técnico: el build supera 500 kB en un solo archivo; dividir con
 (`GET /auth/catalog/permissions`), así se ve todo lo registrado;
 `company/permissionCatalog.ts` solo aporta textos en español (un permiso sin
 texto se muestra con su código y agrupado por prefijo) y `loaded=false` avisa
-que falta ejecutar el seed de auth. Importes con BigInt
+que falta cargarlo en la base de auth: el platform admin ve el botón "Cargar
+permisos pendientes" (`POST /auth/admin/permissions/sync`, 2026-10-04), que no
+asigna roles ni reactiva bajas. Importes con BigInt
 (`shared/utils/decimal.ts`), nunca float. Monitoreo › Actividad y logs
 (`modules/monitoring`, solo platform admin): una pestaña por servicio
 (`/monitoreo/logs/:service`, contrato de platform-audit), filtros y atajos,
@@ -96,6 +98,21 @@ Mi perfil › API keys (`profile/apiKeys.ts`, `ApiKeysTab`): keys propias en la
 empresa activa con permisos elegidos entre los del usuario, vencimiento,
 secreto mostrado una sola vez y revocación (irreversible). Hoy solo
 libro-mayor acepta `X-API-Key`.
+SAP (`modules/sap`, 2026-10-04; módulo propio porque hoy lo usa el administrador
+de SAP; las conciliaciones podrían pasar a Contabilidad): Operaciones masivas
+(`/sap/trabajos`: nueva acción sobre documentos o conciliación → vista previa →
+borrador → "Ejecutar en SAP" con usuario y clave SAP del operador
+(`CredentialsModal`, nunca se guardan en el navegador); detalle con avance cada
+3 s, ítems con la respuesta de SAP, cancelar, reanudar e historial; "Ver
+credenciales" solo platform admin, queda en el historial) y Configuración SAP
+(`/sap/configuracion`: URL del Service Layer de la empresa, editable solo por
+platform admin; bases sugeridas, también se escribe otra). Permisos `SAP_*` en `access.ts`.
+Canales de venta (`modules/lastmiller`, 2026-10-04): un ítem de menú por canal
+(`/ventas/lastmiller/:country/:provider`, lista en `lastmiller/channels.ts`) con
+pestañas SKU (búsqueda con botón: cada consulta abre conexión a Ofisis; on/off,
+promoción y baja con confirmación; alta con id externo = sku, solo lectura),
+Cargas masivas (vista previa y aplicar, `ImportModal`) e Historial. Permisos
+`LASTMILLER_*` en `access.ts`.
 Tesorería (como en proyecto-08): pagos a proveedores (`modules/payments`:
 lotes de constancias, grupos por proveedor, registrar proveedor o correo
 faltante desde el lote, ZIP, enviar y estado de entrega; aviso de pago ya
@@ -112,7 +129,7 @@ CSP propia en nginx (`email-preview-headers.inc.template`: estilos en línea sí
 scripts solo el suyo por sha256). Si se edita su script, recalcular el hash
 (solo ASCII dentro del script; el archivo va con LF por `.gitattributes`).
 Rutas del front: nunca empezar por `/auth`, `/libro-mayor`, `/notificaciones`,
-`/pagos-proveedores` ni `/gateway` (el borde las envía a la API); por eso son
+`/pagos-proveedores`, `/canales-venta`, `/sap-operaciones` ni `/gateway` (el borde las envía a la API); por eso son
 `/tesoreria/*`.
 Tras editar archivos, si el front muestra código viejo, reiniciar `npm run dev`
 (el watcher de Vite en Windows a veces no detecta cambios).

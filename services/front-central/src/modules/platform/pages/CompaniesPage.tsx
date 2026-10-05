@@ -7,10 +7,12 @@ import PageHeader from '../../../shared/components/PageHeader'
 import StatusBadge from '../../../shared/components/StatusBadge'
 import { errorMessage, useApi } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
+import { copyText } from '../../../shared/utils/clipboard'
 import { formatDate } from '../../../shared/utils/format'
 import CodeNameFormModal from '../../company/components/CodeNameFormModal'
 import SapCompanyModal from '../components/SapCompanyModal'
 import SapSummary from '../components/SapSummary'
+import SeedCompanyModal from '../components/SeedCompanyModal'
 import * as companiesService from '../services/companiesService'
 import type { AdminCompany } from '../types'
 
@@ -23,6 +25,7 @@ export default function CompaniesPage() {
   const [form, setForm] = useState<{ company: AdminCompany | null } | null>(null)
   const [sapFor, setSapFor] = useState<AdminCompany | null>(null)
   const [sapVersion, setSapVersion] = useState(0)
+  const [seedFor, setSeedFor] = useState<AdminCompany | null>(null)
   const [toggle, setToggle] = useState<AdminCompany | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -52,6 +55,13 @@ export default function CompaniesPage() {
     }
   }
 
+  // El id lo piden pgAdmin, soporte y las llamadas por API (X-Company-Id).
+  // copyText funciona también por HTTP en la red (sin navigator.clipboard).
+  const copyId = async (company: AdminCompany) => {
+    if (await copyText(company.id)) toast.info(`Id de ${company.code} copiado`)
+    else toast.error('No se pudo copiar el id')
+  }
+
   const columns: Column<AdminCompany>[] = [
     {
       header: 'Empresa',
@@ -59,6 +69,11 @@ export default function CompaniesPage() {
         <>
           <div>{c.name}</div>
           <div className="small text-body-secondary font-monospace">{c.code}</div>
+          <button type="button" className="btn btn-link btn-sm p-0 small text-body-secondary font-monospace text-decoration-none"
+            onClick={() => copyId(c)} title="Copiar id" aria-label={`Copiar id de ${c.name}`}>
+            {c.id}
+            <i className="bi bi-clipboard ms-1" aria-hidden="true" />
+          </button>
         </>
       ),
     },
@@ -81,6 +96,11 @@ export default function CompaniesPage() {
             title={c.is_active ? 'Configurar compañía SAP' : 'Activa la empresa para configurarla'}>
             <i className="bi bi-database-gear me-1" aria-hidden="true" />
             SAP
+          </button>
+          <button type="button" className="btn btn-sm btn-outline-primary me-1" onClick={() => setSeedFor(c)} disabled={!c.is_active}
+            title={c.is_active ? 'Carga inicial de los servicios' : 'Activa la empresa para ejecutar su carga inicial'}>
+            <i className="bi bi-box-arrow-in-down me-1" aria-hidden="true" />
+            Carga inicial
           </button>
           <button type="button" className="btn btn-sm btn-outline-secondary me-1" onClick={() => setForm({ company: c })}
             aria-label={`Renombrar ${c.name}`} title="Renombrar">
@@ -129,6 +149,10 @@ export default function CompaniesPage() {
       )}
       {sapFor && (
         <SapCompanyModal company={sapFor} onClose={() => setSapFor(null)} onChanged={() => setSapVersion((v) => v + 1)} />
+      )}
+      {seedFor && (
+        // El seed de libro-mayor puede crear la compañía SAP: refresca su resumen.
+        <SeedCompanyModal company={seedFor} onClose={() => setSeedFor(null)} onDone={() => setSapVersion((v) => v + 1)} />
       )}
 
       <ConfirmDialog

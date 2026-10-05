@@ -53,4 +53,12 @@ class PermissionCatalogOut(BaseModel):
 
     code: str
     scopes: list[str]  # company, area u own
-    loaded: bool  # false: falta ejecutar el seed para poder concederlo
+    loaded: bool  # false: falta cargarlo (seed o POST /admin/permissions/sync)
+
+
+class PermissionSyncOut(BaseModel):
+    """Resultado de cargar en la base los permisos del catálogo del código."""
+
+    created: list[str]  # Cargados ahora.
+    # Ya existían dados de baja: no se reactivan (requiere una decisión explícita).
+    inactive: list[str]

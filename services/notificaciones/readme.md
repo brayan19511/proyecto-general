@@ -20,6 +20,9 @@ central (`NOTIFICACIONES_ENABLED`). Canal email por SMTP.
 - **Consultas** con alcance own/company, reproceso y cancelación manuales,
   descarga de adjuntos, historial y logs (`packages/platform-audit`).
 - **Seed** (`POST /admin/seed`, `SEED_ENABLED`): plantillas por empresa.
+- **Logs técnicos** (`GET /admin/logs` y `/{log_id}`, solo admin de plataforma,
+  sin `X-Company-Id`): filas propias del schema `audit`; en el front,
+  Monitoreo › Actividad y logs.
 
 Primer consumidor: `services/pagos-proveedores`.
 

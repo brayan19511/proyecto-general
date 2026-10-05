@@ -1,8 +1,11 @@
+import { CHANNELS, channelPath } from '../../modules/lastmiller/channels'
 import {
+  LASTMILLER_VIEW,
   LEDGER_ADMIN,
   LEDGER_VIEW,
   NOTIFICATIONS_VIEW,
   PAYMENTS_VIEW,
+  SAP_VIEW,
   type AccessRule,
 } from '../../shared/auth/access'
 
@@ -48,6 +51,26 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Proveedores', path: '/tesoreria/proveedores', icon: 'building', access: { anyOf: PAYMENTS_VIEW } },
       { label: 'Correos enviados', path: '/tesoreria/correos', icon: 'envelope-arrow-up', access: { anyOf: NOTIFICATIONS_VIEW } },
     ],
+  },
+  {
+    // sap-operaciones (2026-10-04): módulo propio por ahora (lo usa el administrador
+    // de SAP); las conciliaciones podrían pasar a Contabilidad más adelante.
+    // Rutas /sap: /sap-operaciones/* lo envía el borde a la API.
+    label: 'SAP',
+    items: [
+      { label: 'Operaciones masivas', path: '/sap/trabajos', icon: 'cpu', access: { anyOf: SAP_VIEW } },
+      { label: 'Configuración SAP', path: '/sap/configuracion', icon: 'gear', access: { anyOf: SAP_VIEW } },
+    ],
+  },
+  {
+    // canales-venta › lastmiller. Rutas /ventas: /canales-venta/* lo envía el borde a la API.
+    label: 'Canales de venta',
+    items: CHANNELS.map((channel) => ({
+      label: channel.name,
+      path: channelPath(channel),
+      icon: channel.provider === 'peya' ? 'bag' : 'bicycle',
+      access: { anyOf: LASTMILLER_VIEW },
+    })),
   },
   {
     label: 'Empresa',

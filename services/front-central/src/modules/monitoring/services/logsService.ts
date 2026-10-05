@@ -7,6 +7,10 @@ export const LOG_SERVICES = [
   { key: 'gateway', label: 'Central', base: '/gateway/admin/logs', loginPath: '/auth/login' },
   { key: 'auth', label: 'Auth', base: '/auth/admin/logs', loginPath: '/auth/login' },
   { key: 'libro-mayor', label: 'Libro mayor', base: '/libro-mayor/admin/logs', loginPath: null },
+  { key: 'canales-venta', label: 'Canales de venta', base: '/canales-venta/admin/logs', loginPath: null },
+  { key: 'notificaciones', label: 'Notificaciones', base: '/notificaciones/admin/logs', loginPath: null },
+  { key: 'pagos-proveedores', label: 'Pagos a proveedores', base: '/pagos-proveedores/admin/logs', loginPath: null },
+  { key: 'sap-operaciones', label: 'Operaciones SAP', base: '/sap-operaciones/admin/logs', loginPath: null },
 ] as const
 
 export type LogServiceKey = (typeof LOG_SERVICES)[number]['key']

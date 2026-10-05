@@ -21,9 +21,11 @@ from app.core.config import settings
 from app.core.db.connection import engine
 from app.core.public_routes import (
     AUTH_ROUTES,
+    CANALES_VENTA_ROUTES,
     LIBRO_MAYOR_ROUTES,
     NOTIFICACIONES_ROUTES,
     PAGOS_PROVEEDORES_ROUTES,
+    SAP_OPERACIONES_ROUTES,
     Route,
 )
 from app.models.entities import ServiceState
@@ -64,6 +66,16 @@ SERVICES: dict[str, ServiceInfo] = {
         "pagos-proveedores", enabled_by_config=settings.PAGOS_PROVEEDORES_ENABLED, panel_managed=True,
         prefix="/pagos-proveedores", url=settings.PAGOS_PROVEEDORES_URL,
         timeout=settings.PAGOS_PROVEEDORES_TIMEOUT_SECONDS, routes=PAGOS_PROVEEDORES_ROUTES,
+    ),
+    "canales-venta": ServiceInfo(
+        "canales-venta", enabled_by_config=settings.CANALES_VENTA_ENABLED, panel_managed=True,
+        prefix="/canales-venta", url=settings.CANALES_VENTA_URL,
+        timeout=settings.CANALES_VENTA_TIMEOUT_SECONDS, routes=CANALES_VENTA_ROUTES,
+    ),
+    "sap-operaciones": ServiceInfo(
+        "sap-operaciones", enabled_by_config=settings.SAP_OPERACIONES_ENABLED, panel_managed=True,
+        prefix="/sap-operaciones", url=settings.SAP_OPERACIONES_URL,
+        timeout=settings.SAP_OPERACIONES_TIMEOUT_SECONDS, routes=SAP_OPERACIONES_ROUTES,
     ),
 }
 

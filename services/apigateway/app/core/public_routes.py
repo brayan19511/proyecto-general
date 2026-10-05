@@ -107,6 +107,8 @@ NOTIFICACIONES_ROUTES: tuple[Route, ...] = (
     Route("/notificaciones/templates", WRITE),
     # Carga inicial: notificaciones solo registra la ruta con SEED_ENABLED=true.
     Route("/notificaciones/admin/seed", POST),
+    # Administración de plataforma: logs técnicos (los valida el servicio).
+    Route("/notificaciones/admin/logs", READ),
 )
 
 # Todo salvo health y ready (mismo criterio que notificaciones). Los permisos
@@ -126,4 +128,45 @@ PAGOS_PROVEEDORES_ROUTES: tuple[Route, ...] = (
     Route("/pagos-proveedores/batches", WRITE),
     # Configuración de la empresa (plantilla por defecto; cambiarla: payments.admin).
     Route("/pagos-proveedores/settings", WRITE),
+    # Administración de plataforma: logs técnicos (los valida el servicio).
+    Route("/pagos-proveedores/admin/logs", READ),
+)
+
+# Todo salvo health y ready. Los permisos los valida canales-venta con auth
+# (lastmiller.view/edit/import) y solo para la empresa dueña de lastmiller.
+CANALES_VENTA_ROUTES: tuple[Route, ...] = (
+    # Documentación.
+    Route("/canales-venta/docs", READ),
+    Route("/canales-venta/redoc", READ),
+    Route("/canales-venta/openapi.json", READ),
+    # Cargas masivas (vista previa y aplicación): leer un .xlsx de hasta 20.000
+    # filas y escribir en Ofisis por lotes. Más que los 30 s por defecto. Va antes
+    # de la ruta general (gana la primera que coincide); un prefijo por canal.
+    Route("/canales-venta/lastmiller/pe/rappi/imports", POST, timeout=300),
+    Route("/canales-venta/lastmiller/mx/rappi/imports", POST, timeout=300),
+    Route("/canales-venta/lastmiller/pe/peya/imports", POST, timeout=300),
+    # lastmiller: canales, SKU (alta, on/off, baja, promoción), historial y cargas.
+    Route("/canales-venta/lastmiller", WRITE),
+    # Logs técnicos propios (solo platform admin; lo valida el servicio).
+    Route("/canales-venta/admin/logs", READ),
+)
+
+# Todo salvo health y ready. Los permisos los valida sap-operaciones con auth
+# (sap_operations.view/execute; ver credenciales: solo platform admin).
+SAP_OPERACIONES_ROUTES: tuple[Route, ...] = (
+    # Documentación.
+    Route("/sap-operaciones/docs", READ),
+    Route("/sap-operaciones/redoc", READ),
+    Route("/sap-operaciones/openapi.json", READ),
+    # Vistas previas: leer un Excel de conciliaciones o miles de documentos y
+    # guardar sus ítems. Más que los 30 s por defecto. Van antes de la general.
+    Route("/sap-operaciones/jobs/document-actions", POST, timeout=120),
+    Route("/sap-operaciones/jobs/reconciliations", POST, timeout=120),
+    # Trabajos: consultar, encolar (prueba el login en SAP), cancelar, reanudar, credenciales.
+    Route("/sap-operaciones/jobs", WRITE, timeout=60),
+    # Bases SAP sugeridas y configuración (URL del Service Layer) por empresa.
+    Route("/sap-operaciones/databases", WRITE),
+    Route("/sap-operaciones/settings", WRITE),
+    # Logs técnicos propios (solo platform admin; lo valida el servicio).
+    Route("/sap-operaciones/admin/logs", READ),
 )

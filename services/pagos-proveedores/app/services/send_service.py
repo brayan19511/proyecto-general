@@ -266,8 +266,21 @@ class SendService:
             raise ConflictError("El lote todavía no tiene un envío en notificaciones.", code="not_sent")
         base = f"/notificaciones/dispatches/{batch.notification_dispatch_id}"
         headers = dict(ctx.auth_headers)
-        dispatch = self._get(base, headers)
-        messages = self._get(f"{base}/messages", headers, params={"limit": 200})["items"]
+        try:
+            dispatch = self._get(base, headers)
+            messages = self._get(f"{base}/messages", headers, params={"limit": 200})["items"]
+        except UpstreamRejected as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            # Notificaciones consulta con el token de quien mira el lote: sin
+            # notifications.view, o con alcance "solo lo propio" sobre un envío que
+            # hizo otro usuario, responde 403/404. Se explica en lugar de "no encontrado".
+            raise UpstreamRejected(403, {
+                "detail": "No tienes permiso para ver los correos de este lote. Se necesita 'Ver envíos de correo' "
+                          "(notifications.view) con alcance de toda la empresa; con 'Solo lo propio' solo se ven "
+                          "los lotes que enviaste tú.",
+                "code": "notifications_scope",
+            }) from None
         by_reference = {m["consumer_reference"]: m for m in messages}
         return {
             "status": dispatch["status"],

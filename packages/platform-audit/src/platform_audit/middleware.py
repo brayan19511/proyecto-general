@@ -7,8 +7,8 @@ Por solicitud:
      max_body_bytes (sin consumirlo ni retrasarlo).
   3. Al terminar: cierra la cabecera (estado, resultado, fin, duración,
      usuario) y agrega los detalles: request (parámetros, headers permitidos,
-     body enmascarado), response si hubo error (el mensaje) y la excepción si
-     la hubo.
+     body enmascarado), response (status, tipo y body enmascarado, también en
+     los éxitos) y la excepción si la hubo.
 
 Devuelve X-Trace-Id en la respuesta, para citarlo al reportar un problema.
 Escribe en un hilo aparte (las escrituras son síncronas) para no bloquear el
@@ -90,7 +90,9 @@ class AuditMiddleware:
         request_body = bytearray()
         request_truncated = False
         response_status = 500
+        response_type = ""
         response_body = bytearray()
+        response_truncated = False
 
         async def receive_wrapper():
             nonlocal request_truncated
@@ -104,15 +106,22 @@ class AuditMiddleware:
             return message
 
         async def send_wrapper(message):
-            nonlocal response_status
+            nonlocal response_status, response_type, response_truncated
             if message["type"] == "http.response.start":
                 response_status = message["status"]
                 message.setdefault("headers", [])
+                for name, value in message["headers"]:
+                    if name.lower() == b"content-type":
+                        response_type = value.decode("latin-1")
                 message["headers"] = list(message["headers"]) + [(b"x-trace-id", trace_id.encode())]
-            elif message["type"] == "http.response.body" and response_status >= 400:
-                # Del cuerpo de la respuesta solo interesa el mensaje de error.
-                if len(response_body) < config.max_body_bytes:
-                    response_body.extend(message.get("body", b"")[: config.max_body_bytes - len(response_body)])
+            elif message["type"] == "http.response.body":
+                # Copia hasta max_body_bytes (de éxitos y errores, decisión del
+                # usuario 2026-10-04); el resto pasa sin guardarse.
+                chunk = message.get("body", b"")
+                if len(response_body) + len(chunk) <= config.max_body_bytes:
+                    response_body.extend(chunk)
+                else:
+                    response_truncated = True
             await send(message)
 
         error: Exception | None = None
@@ -142,13 +151,19 @@ class AuditMiddleware:
                     },
                 )
             ]
-            if response_status >= 400 and error is None:
+            if error is None:
+                # Con las mismas reglas que la petición: JSON enmascarado si cabe;
+                # si es grande o no es JSON (CSV, PDF, ZIP), solo tipo y tamaño.
                 details.append(
                     LogDetail(
-                        id=writer.new_id(), log_id=operation.log_id, level=outcome, kind="response",
-                        created_at=finished,
-                        data={"body": safe_body(bytes(response_body), "application/json", False,
-                                                config.max_body_bytes, config.masker)},
+                        id=writer.new_id(), log_id=operation.log_id, level=outcome if outcome != "success" else "info",
+                        kind="response", created_at=finished,
+                        data={
+                            "status": response_status,
+                            "content_type": response_type or None,
+                            "body": safe_body(bytes(response_body), response_type, response_truncated,
+                                              config.max_body_bytes, config.masker),
+                        },
                     )
                 )
             if error is not None:

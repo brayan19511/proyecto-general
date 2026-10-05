@@ -192,6 +192,12 @@ Catálogo de notificaciones (2026-10-01): `notifications.view`, `notifications.s
 
 Catálogo de pagos-proveedores (2026-10-01), todos con alcance company: `payments.view`, `payments.providers.manage`, `payments.send` y `payments.admin`. Los aplica pagos-proveedores: `providers.manage` y `send` incluyen `view` pero no se incluyen entre sí; `admin` incluye todo. El seed asigna `payments.admin` a `ADMIN_EMPRESA`.
 
+Carga de permisos sin seed (decisión del usuario, 2026-10-04): `POST /admin/permissions/sync`, solo administrador de plataforma. Inserta en `permissions` los códigos del catálogo del código (`app/core/permissions.py`) que aún no existen, con historial `permission.loaded` atribuido al usuario. Idempotente; no crea códigos libres (sigue sin haber CRUD de permisos: un permiso solo existe si un servicio lo comprueba), no asigna roles y no reactiva permisos dados de baja (los devuelve en `inactive`). El front lo ofrece en Roles y permisos › Permisos cuando hay permisos con `loaded=false`. Asignar un permiso nuevo al rol `ADMIN_EMPRESA` sigue siendo cosa del seed o de `POST /roles/{id}/permissions`.
+
+Catálogo de canales-venta, módulo lastmiller (2026-10-03), todos con alcance company: `lastmiller.view`, `lastmiller.edit` y `lastmiller.import`. Los aplica canales-venta (cada nivel incluye al anterior). El seed asigna `lastmiller.import` a `ADMIN_EMPRESA`; en una base existente, volver a ejecutar el seed crea los permisos y esa asignación.
+
+Catálogo de sap-operaciones (2026-10-04), con alcance company: `sap_operations.view` y `sap_operations.execute` (incluye view; lo aplica sap-operaciones). El seed asigna `sap_operations.execute` a `ADMIN_EMPRESA`. En una base existente, "Cargar permisos pendientes" (o el seed) los crea.
+
 Acepta Bearer o `X-API-Key` (con API key la empresa es la de la clave). Incluye `user_id` (agregado de forma compatible, 2026-09-30): así otro servicio (libro-mayor) valida identidad y permisos en una sola llamada, también con API key (p. ej. Power BI). Incluye `email` (agregado de forma compatible, 2026-10-01): notificaciones lo guarda al crear un envío para el aviso de fallos; no está verificado.
 
 ### Pendiente

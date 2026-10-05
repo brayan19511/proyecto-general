@@ -32,6 +32,10 @@ COMPANY_ADMIN_PERMISSIONS = [
     ("notifications.admin", "company"),
     # pagos-proveedores: admin incluye ver, editar proveedores y enviar.
     ("payments.admin", "company"),
+    # canales-venta (lastmiller): import incluye view y edit.
+    ("lastmiller.import", "company"),
+    # sap-operaciones: execute incluye view.
+    ("sap_operations.execute", "company"),
 ]
 
 # Catálogo de países (ISO 3166-1 alfa-2). Para admitir otro país basta con

@@ -95,3 +95,17 @@ export function updateSettings(defaultTemplateCode: string | null) {
 export function getDeliveryStatus(batchId: string) {
   return apiRequest<DeliveryStatus>(`${BASE}/batches/${batchId}/delivery-status`)
 }
+
+// Todos los proveedores con los filtros dados (recorre las páginas de 200, el
+// máximo de pagos-proveedores), para descargarlos.
+export async function listAllProviders(search: string, includeInactive: boolean) {
+  const all: Provider[] = []
+  for (let offset = 0; ; offset += 200) {
+    const q = new URLSearchParams({ limit: '200', offset: String(offset) })
+    if (search) q.set('search', search)
+    if (includeInactive) q.set('include_inactive', 'true')
+    const page = await apiRequest<Page<Provider>>(`${BASE}/providers?${q}`)
+    all.push(...page.items)
+    if (page.items.length < 200 || all.length >= page.total) return all
+  }
+}

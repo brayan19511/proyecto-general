@@ -30,6 +30,15 @@ export const PAYMENTS_MANAGE = ['payments.providers.manage', 'payments.admin']
 export const PAYMENTS_SEND = ['payments.send', 'payments.admin'] // lotes, ZIP y envío
 export const PAYMENTS_ADMIN = ['payments.admin'] // además elegir la plantilla del envío
 
+// Canales de venta › lastmiller: cada nivel incluye al anterior (lo aplica canales-venta).
+export const LASTMILLER_VIEW = ['lastmiller.view', 'lastmiller.edit', 'lastmiller.import']
+export const LASTMILLER_EDIT = ['lastmiller.edit', 'lastmiller.import'] // alta, on/off, baja y promoción
+export const LASTMILLER_IMPORT = ['lastmiller.import'] // cargas masivas
+
+// SAP › operaciones masivas: execute incluye view (lo aplica sap-operaciones).
+export const SAP_VIEW = ['sap_operations.view', 'sap_operations.execute']
+export const SAP_EXECUTE = ['sap_operations.execute'] // crear, ejecutar, cancelar, reanudar; bases SAP
+
 export function canAccess(
   rule: AccessRule,
   isPlatformAdmin: boolean,

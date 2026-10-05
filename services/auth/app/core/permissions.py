@@ -49,4 +49,17 @@ PERMISSIONS: dict[str, list[str]] = {
     "payments.providers.manage": ["company"],
     "payments.send": ["company"],
     "payments.admin": ["company"],
+    # Servicio canales-venta (services/canales-venta), módulo lastmiller: SKU
+    # de Rappi y PedidosYa. Cada nivel incluye al anterior (lo aplica
+    # canales-venta): view consulta; edit además on/off y promociones una por
+    # una; import además cargas masivas.
+    "lastmiller.view": ["company"],
+    "lastmiller.edit": ["company"],
+    "lastmiller.import": ["company"],
+    # Servicio sap-operaciones (services/sap-operaciones): trabajos masivos en
+    # SAP por Service Layer. execute incluye view (lo aplica sap-operaciones):
+    # view consulta trabajos; execute además los crea, ejecuta, cancela y
+    # reanuda, y administra la lista de bases SAP.
+    "sap_operations.view": ["company"],
+    "sap_operations.execute": ["company"],
 }

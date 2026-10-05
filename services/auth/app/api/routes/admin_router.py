@@ -16,8 +16,10 @@ from app.schemas.admin import (
 )
 from app.schemas.me import RevokedSessionsOut
 from app.schemas.page import Page
+from app.schemas.role import PermissionSyncOut
 from app.schemas.user import PasswordReset
 from app.services import password_service
+from app.services.permission_catalog import PermissionSyncConflictError, sync_permission_catalog
 from app.services.admin_service import (
     AdminService,
     CompanyCodeExistsError,
@@ -58,6 +60,20 @@ def list_companies(page: Page = Depends(), db: Session = Depends(get_db)):
 @router.get("/areas", response_model=list[AdminAreaOut], operation_id="adminListAreas")
 def list_areas(company_id: str | None = CompanyFilter, page: Page = Depends(), db: Session = Depends(get_db)):
     return AdminService(db).list_areas(company_id, page.limit, page.offset)
+
+
+@router.post("/permissions/sync", response_model=PermissionSyncOut, operation_id="adminSyncPermissions")
+def sync_permissions(current: CurrentUser = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    """Carga en la base los permisos del catálogo del código que aún no están
+    (lo mismo que hace el seed con los permisos, sin el token de seed).
+    Idempotente; no asigna roles ni reactiva permisos dados de baja."""
+    try:
+        return sync_permission_catalog(db, current.user.id)
+    except PermissionSyncConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Otra carga de permisos se ejecutó al mismo tiempo. Vuelve a intentarlo.",
+        ) from exc
 
 
 @router.get("/positions", response_model=list[AdminPositionOut], operation_id="adminListPositions")

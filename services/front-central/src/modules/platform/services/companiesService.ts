@@ -1,5 +1,5 @@
 import { ApiError, apiRequest } from '../../../shared/api/apiClient'
-import type { AdminCompany, SapCompany } from '../types'
+import type { AdminCompany, LedgerSeedResult, NotificationsSeedResult, SapCompany } from '../types'
 
 // Empresas (auth, solo platform admin). No hay borrado: se desactivan.
 const id = encodeURIComponent
@@ -47,4 +47,16 @@ export function updateSapCompany(companyId: string, changes: Partial<Omit<SapCom
 // Baja lógica: la empresa deja de sincronizarse; las líneas se conservan.
 export function deleteSapCompany(companyId: string) {
   return apiRequest<void>(SAP, { method: 'DELETE', companyId })
+}
+
+// Carga inicial de una empresa (datos de app/seeds/data.py de cada servicio).
+// Solo platform admin; con el X-Company-Id de ESA empresa. Idempotente: repetirla
+// no duplica ni reactiva nada. Si el servicio tiene SEED_ENABLED=false, la ruta
+// no existe (404 "Not Found").
+export function runLedgerSeed(companyId: string) {
+  return apiRequest<LedgerSeedResult>('/libro-mayor/admin/seed', { method: 'POST', companyId })
+}
+
+export function runNotificationsSeed(companyId: string) {
+  return apiRequest<NotificationsSeedResult>('/notificaciones/admin/seed', { method: 'POST', companyId })
 }

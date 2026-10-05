@@ -9,6 +9,7 @@ from platform_audit import AuditConfig, AuditMiddleware
 from app.api.routes import (
     dispatches_router,
     health_router,
+    logs_router,
     messages_router,
     seed_router,
     smtp_accounts_router,
@@ -85,6 +86,7 @@ api.include_router(smtp_accounts_router.router)
 api.include_router(dispatches_router.router)
 api.include_router(messages_router.router)
 api.include_router(templates_router.router)
+api.include_router(logs_router.router)
 if settings.SEED_ENABLED:
     # Carga inicial: la ruta solo existe mientras SEED_ENABLED=true.
     api.include_router(seed_router.router)

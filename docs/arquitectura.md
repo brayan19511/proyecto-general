@@ -11,11 +11,14 @@ Plataforma multiempresa con servicios y despliegues independientes. Auth, la API
 Componentes previstos:
 - Identidad y acceso: usuarios, empresas, organización, autorización, sesiones y API keys.
 - API central: entrada de clientes, límites generales, enrutamiento y coordinación.
-- Proxy de borde (Caddy, decisión del usuario 2026-09-30): única entrada desde la red, con HTTPS. Solo TLS, límite de tamaño de solicitud (100 MB) y reenvío por prefijo (`/auth`, `/libro-mayor`, `/notificaciones`, `/pagos-proveedores`, `/gateway` a la central; el resto al front; pgAdmin en otro puerto). No es un API Gateway: no tiene reglas, autorización ni coordinación. Front y API comparten origen (sin CORS). La central confía en su `X-Forwarded-For` solo por una red interna de subred fija (`TRUSTED_PROXIES`). Archivos mayores a 100 MB: subida directa a almacenamiento de objetos con URL firmada, nunca por la API.
+- Proxy de borde (Caddy, decisión del usuario 2026-09-30): única entrada desde la red, con HTTPS. Solo TLS, límite de tamaño de solicitud (100 MB) y reenvío por prefijo (`/auth`, `/libro-mayor`, `/notificaciones`, `/pagos-proveedores`, `/canales-venta`, `/sap-operaciones`, `/gateway` a la central; el resto al front; pgAdmin en otro puerto). No es un API Gateway: no tiene reglas, autorización ni coordinación. Front y API comparten origen (sin CORS). La central confía en su `X-Forwarded-For` solo por una red interna de subred fija (`TRUSTED_PROXIES`). Archivos mayores a 100 MB: subida directa a almacenamiento de objetos con URL firmada, nunca por la API.
 - Front (`services/front-central`, React): contenedor nginx con el build estático, detrás del proxy de borde.
 - Libro mayor / gastos (`services/libro-mayor`, Python + FastAPI): lee SAP Business One HANA en solo lectura, sincroniza y clasifica gastos con reglas, y los consulta filtrados por área. Implementado y publicado en la central (`LIBRO_MAYOR_ENABLED`).
 - Notificaciones (`services/notificaciones`, Python + FastAPI): envío de correos por SMTP con cuentas por empresa, plantillas, worker con reintentos y retención. Implementado y publicado en la central (`NOTIFICACIONES_ENABLED`); lo consumen otros servicios con el token del usuario.
 - Pagos a proveedores (`services/pagos-proveedores`, Python + FastAPI): maestro de proveedores, lectura de constancias PDF (con OCR) y envío por notificaciones. Implementado y publicado en la central (`PAGOS_PROVEEDORES_ENABLED`).
+- Canales de venta (`services/canales-venta`, Python + FastAPI): módulo lastmiller (SKU de Rappi Perú/México y PedidosYa Perú) sobre tablas externas de Ofisis (SQL Server), sin pool de conexiones. Solo una empresa (`LASTMILLER_COMPANY_CODE`). Listado publicado en la central (`CANALES_VENTA_ENABLED`); on/off, promociones y cargas masivas pendientes.
+- Operaciones SAP (`services/sap-operaciones`, Python + FastAPI, API y worker): acciones masivas sobre documentos y conciliaciones internas por SAP Service Layer, con el usuario SAP del operador, vista previa, trabajos en la base tomados por un worker (SKIP LOCKED) y sin reintentos automáticos de mutaciones (un ítem cortado queda "incierto"). Separado de libro-mayor, que sigue en solo lectura. Publicado en la central (`SAP_OPERACIONES_ENABLED`).
+- Servicio previsto (acuerdo del usuario, 2026-10-03): `asistencia` (marcas de RRHH, solo lectura).
 - Documentos e IA: extracción, validación y análisis de PDFs e imágenes mediante herramientas y proveedores como Gemini u OpenAI.
 - Seguimiento propio: logs, logs_detail y logs_steps locales a cada servicio, con correlación entre llamadas. Sin OpenTelemetry ni plataforma de logs externa obligatoria.
 
@@ -67,6 +70,8 @@ El número es texto; la validación y normalización son específicas del tipo. 
 ## Credenciales y sesiones
 
 Acuerdos: cliente web, sesiones de 5 horas y máximo predeterminado de 3 configurable por usuario. La arquitectura contempla JWT de firma asimétrica, refresh tokens almacenados como hash y sesiones revocables. Pendiente de confirmar: duración absoluta o por inactividad, vida del access token, comportamiento al alcanzar el máximo y política de reutilización. Propuestas anteriores del asistente: 5 horas absolutas, access de 15 minutos, rechazar el cuarto login y revocar sesión ante reutilización de refresh. No se implementan sin revisarlas con el usuario.
+
+Credenciales de sistemas externos que guarda un servicio (decisión del usuario, 2026-10-04, para cualquier módulo): por ejemplo, la clave SAP de un operador o la contraseña de una cuenta SMTP. Se guardan cifradas (Fernet con claves del despliegue, rotables) y no se borran al terminar su uso. El usuario (no secreto) lo ve quien vea el registro; la contraseña descifrada, solo el administrador de plataforma, con una acción explícita que queda en el historial (quién, cuándo, de qué registro). Nunca aparecen en listados, logs ni snapshots de historial. No aplica a contraseñas de la plataforma (auth guarda hashes, nunca el valor). Aplicado en sap-operaciones. Las cuentas SMTP de notificaciones no lo necesitan (decisión del usuario, 2026-10-04): las registra el propio administrador.
 
 La opción de duración infinita solicitada se aplica a API keys: expires_at=null. No significa permiso permanente: revocación, baja o pérdida de membresía/roles siguen anulando el acceso.
 
@@ -123,6 +128,10 @@ La cabecera puede cerrarse actualizando estado, fin y duración; detalles y paso
 Por decisión del usuario se guardan parámetros, headers y bodies, siempre enmascarados y con límite de tamaño: tokens, cookies, passwords, keys, emails y números de documento se reemplazan por `***`; los headers siguen una lista positiva; bodies de más de 4 KB o no JSON solo registran tipo y tamaño; de las excepciones, solo el tipo. Un fallo de logging técnico emite aviso saneado y no deshace negocios confirmados. Las tablas técnicas persistentes no se purgan automáticamente; cualquier retención/purga futura se decide explícitamente.
 
 El historial de negocio es independiente: los cambios críticos y su evento se confirman en la misma transacción, con actor y snapshots permitidos. Si posteriormente se publican, se incorporarán outbox y deduplicación. No se crea ahora un servicio central de auditoría. La vista conjunta futura consultará APIs internas autorizadas o una ingesta diseñada para tolerar fallos; nunca tablas ajenas.
+
+## Descargas
+
+Todas las descargas de tablas son CSV (decisión del usuario, 2026-10-04): separador `;`, UTF-8 con BOM y saltos CRLF, para que Excel en español las abra con tildes y columnas separadas. Sin paquetes externos: en el front, `shared/utils/download.ts` (`toCsv`) con los datos ya cargados; en un servicio, el módulo `csv` de Python (`app/services/csv_export.py`) cuando hay que recorrer muchas filas (SKU de un canal, ítems de un trabajo SAP). `openpyxl` se usa solo para leer los `.xlsx` que suben los usuarios.
 
 ## Documentos y trabajos futuros
 

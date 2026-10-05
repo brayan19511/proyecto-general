@@ -8,6 +8,7 @@ import StatusBadge from '../../../shared/components/StatusBadge'
 import { PAYMENTS_MANAGE, useCanAccess } from '../../../shared/auth/access'
 import { errorMessage, useApi } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
+import { saveBlob, toCsv } from '../../../shared/utils/download'
 import ProviderFormModal from '../components/ProviderFormModal'
 import * as paymentsService from '../services/paymentsService'
 import type { Provider } from '../types'
@@ -25,6 +26,26 @@ export default function ProvidersPage() {
   const [form, setForm] = useState<{ provider: Provider | null } | null>(null)
   const [pending, setPending] = useState<{ kind: 'delete' | 'restore'; provider: Provider } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  // CSV con todos los proveedores que cumplen la búsqueda (no solo esta página).
+  const download = async () => {
+    setDownloading(true)
+    try {
+      const all = await paymentsService.listAllProviders(term, includeInactive)
+      saveBlob(toCsv(all, [
+        { header: 'RUC / DNI', value: (p) => p.tax_id },
+        { header: 'Razón social', value: (p) => p.legal_name },
+        { header: 'Nombres comerciales', value: (p) => p.commercial_names.join(' | ') },
+        { header: 'Correos de pago', value: (p) => p.payment_emails.join(', ') },
+        { header: 'Estado', value: (p) => (p.is_active ? 'Activo' : 'De baja') },
+      ]), 'proveedores.csv')
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const confirm = async () => {
     if (!pending) return
@@ -104,6 +125,9 @@ export default function ProvidersPage() {
             onChange={(e) => { setIncludeInactive(e.target.checked); setOffset(0) }} />
           <label htmlFor="prov-inactive" className="form-check-label">Ver dados de baja</label>
         </div>
+        <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" disabled={downloading} onClick={download}>
+          <i className="bi bi-download me-1" aria-hidden="true" />Descargar CSV
+        </button>
       </div>
       <AsyncState loading={providers.loading} error={providers.error} onRetry={providers.reload} hasData={providers.data !== undefined}>
         <DataTable columns={columns} rows={providers.data?.items ?? []} rowKey={(p) => p.id}

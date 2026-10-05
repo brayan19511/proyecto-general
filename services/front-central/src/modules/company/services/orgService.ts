@@ -114,3 +114,9 @@ export async function listPositionRolesMap(positions: Position[]) {
 export function listPermissionCatalog() {
   return apiRequest<CatalogPermission[]>('/auth/catalog/permissions')
 }
+
+// Solo platform admin: carga en auth los permisos del catálogo que faltan en su
+// base (los que se muestran con loaded=false). No asigna roles ni reactiva bajas.
+export function syncPermissionCatalog() {
+  return apiRequest<{ created: string[]; inactive: string[] }>('/auth/admin/permissions/sync', { method: 'POST' })
+}
