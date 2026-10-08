@@ -13,7 +13,15 @@ export const GROUP_STATUS: Record<GroupStatus, { label: string; tone: BadgeTone 
   MISSING_PAYMENT_EMAIL: { label: 'Sin correo', tone: 'warning' },
 }
 
-// Una línea por valor (nombres comerciales, correos); quita vacíos.
+// Correos: uno por línea, o separados por coma o punto y coma (un correo nunca
+// lleva esos caracteres); quita vacíos.
 export function splitLines(text: string): string[] {
   return text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean)
+}
+
+// Nombres comerciales: SOLO uno por línea. Un nombre puede llevar comas
+// ("Hebei Huishi Technology Co., Ltd"); partirlo por la coma guardaría "Ltd"
+// como un nombre más, que luego choca con otros proveedores.
+export function splitByLine(text: string): string[] {
+  return text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
 }

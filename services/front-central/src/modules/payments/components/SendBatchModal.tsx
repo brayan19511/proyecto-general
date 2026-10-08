@@ -67,8 +67,9 @@ export default function SendBatchModal({ batch, onClose, onSent }: { batch: Batc
           </div>
           <div className="mb-3">
             <label htmlFor="s-subject" className="form-label">Asunto <span className="text-body-secondary">(opcional)</span></label>
-            <input id="s-subject" className="form-control" maxLength={998} placeholder="El de la plantilla" value={subject}
-              onChange={(e) => setSubject(e.target.value)} />
+            {/* Vacío = el asunto de la plantilla (nunca se envía sin asunto). */}
+            <input id="s-subject" className="form-control" maxLength={998} placeholder="Por defecto, el de la plantilla"
+              value={subject} onChange={(e) => setSubject(e.target.value)} />
           </div>
           <div>
             <label htmlFor="s-message" className="form-label">Mensaje adicional <span className="text-body-secondary">(opcional)</span></label>

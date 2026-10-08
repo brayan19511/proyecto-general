@@ -2,7 +2,7 @@ import { useState } from 'react'
 import FormModal from '../../../shared/components/FormModal'
 import { errorMessage } from '../../../shared/hooks/useApi'
 import { toast } from '../../../shared/stores/toastStore'
-import { splitLines } from '../labels'
+import { splitByLine, splitLines } from '../labels'
 import * as paymentsService from '../services/paymentsService'
 import type { Provider, ProviderInput } from '../types'
 
@@ -30,7 +30,7 @@ export default function ProviderFormModal({ provider, initial, onClose, onSaved 
     const input: ProviderInput = {
       tax_id: taxId.trim(),
       legal_name: legalName.trim(),
-      commercial_names: splitLines(names),
+      commercial_names: splitByLine(names), // un nombre puede llevar comas: solo por línea
       payment_emails: splitLines(emails),
     }
     try {
@@ -69,10 +69,10 @@ export default function ProviderFormModal({ provider, initial, onClose, onSaved 
         <div className="col-12">
           <label htmlFor="p-names" className="form-label">Nombres comerciales <span className="text-body-secondary">(uno por línea)</span></label>
           <textarea id="p-names" className="form-control" rows={3} value={names} onChange={(e) => setNames(e.target.value)} />
-          <div className="form-text">Cómo puede aparecer el titular en las constancias. Hasta 20.</div>
+          <div className="form-text">Cómo puede aparecer el titular en las constancias, completo y en una sola línea (las comas son parte del nombre). Hasta 20.</div>
         </div>
         <div className="col-12">
-          <label htmlFor="p-emails" className="form-label">Correos para avisos de pago <span className="text-body-secondary">(uno por línea)</span></label>
+          <label htmlFor="p-emails" className="form-label">Correos para avisos de pago <span className="text-body-secondary">(uno por línea o separados por coma)</span></label>
           <textarea id="p-emails" className="form-control" rows={3} value={emails} onChange={(e) => setEmails(e.target.value)} />
           <div className="form-text">Sin correo, sus pagos quedan "Sin correo" y el lote no se puede enviar.</div>
         </div>

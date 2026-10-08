@@ -125,6 +125,10 @@ PDF generado pasa por pdfplumber, extracción y agrupamiento. Falta validar con
 constancias reales (`muestras/`) y el OCR (tesseract y poppler vienen en la
 imagen de Docker; no en el Windows de desarrollo).
 
+Decisión del usuario (2026-10-08): en las transferencias se informa el "Monto
+total" de la constancia (incluye comisiones), como en proyecto-05, y no el
+"Monto transferido".
+
 ## Pendientes
 
 - Tiempo de lectura con OCR y si hace falta un worker.

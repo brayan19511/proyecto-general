@@ -320,7 +320,7 @@ services:
       - path: env/edge.env
         required: false # solo hace falta en modo dns
     ports:
-      - "${EDGE_BIND:-0.0.0.0}:80:80"
+      # - "${EDGE_BIND:-0.0.0.0}:80:80"
       - "${EDGE_BIND:-0.0.0.0}:443:443"
       - "${EDGE_BIND:-0.0.0.0}:8443:8443" # pgAdmin (perfil admin); cerrarlo en el firewall si no se usa
     volumes:
