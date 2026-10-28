@@ -6,10 +6,10 @@ defecto**. Falta activarlo en un entorno real y probar contra HANA.
 
 ## Activar
 
-1. En `services/apigateway/.env`: `LIBRO_MAYOR_ENABLED=true`. En el Compose,
+1. En `services/apigateway/apigateway.env`: `LIBRO_MAYOR_ENABLED=true`. En el Compose,
    `LIBRO_MAYOR_URL` ya apunta a `http://libro-mayor.internal:8000`; fuera de
    Docker, poner la dirección local (p. ej. `http://127.0.0.1:8002`).
-2. `docker compose --env-file ../../services/apigateway/.env up -d --build` desde `desarrollo/plataforma-completa` (levanta
+2. `docker compose --env-file ../../services/apigateway/apigateway.env up -d --build` desde `desarrollo/plataforma-completa` (levanta
    `libro-mayor-migrate`, `libro-mayor` y `libro-mayor-worker`) o, si ya
    estaban arriba, `docker compose restart apigateway`.
 3. Comprobar: `GET http://127.0.0.1:8001/libro-mayor/health` a través de la
@@ -62,7 +62,7 @@ Lista explícita en `services/apigateway/app/core/public_routes.py`
 
 - `libro-mayor-net` es interna (solo la central y libro-mayor). `sap-egress` da
   salida hacia el HANA, que está fuera de la plataforma.
-- El `.env` de libro-mayor (montado de solo lectura) debe usar la misma base
+- `libro-mayor.env` (pasado con `env_file`) debe usar la misma base
   del Compose (`DB_NAME`, `DB_USER`, `DB_PASSWORD`); `DB_HOST`, `AUTH_URL` y
   `TRUSTED_PROXIES` los fija el Compose.
 - libro-mayor llama a auth por `auth-net`, que está en el `TRUSTED_PROXIES` de

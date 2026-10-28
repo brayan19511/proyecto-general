@@ -37,7 +37,7 @@ El usuario implementará el servicio paso a paso. El asistente orienta y revisa;
 - migrations/: Alembic configurado y limitado al schema `auth`. Revisiones aplicadas hasta `8baed1d57096` (head).
 - Logs: paquete compartido `../../packages/platform-audit` (schema `audit`), con AuditMiddleware en main.py, pasos en login y seed, y consulta en GET /admin/logs (app/api/routes/logs_router.py). Migrar con `python scripts/migrate_audit.py`.
 - requirements.txt: FastAPI, Uvicorn, pydantic-settings, SQLAlchemy, Psycopg 3, Alembic, pwdlib[argon2] y PyJWT[crypto].
-- .env.example: variables de configuración sin valores.
+- auth.env.example: variables de configuración sin valores (copiar a auth.env).
 
 No existen todavía: recuperación autónoma de cuenta ni pruebas automatizadas.
 
@@ -76,7 +76,7 @@ las claves JWT (volumen de solo lectura en `/app/services/auth/secrets`):
 
 ```powershell
 docker run --rm -p 8001:8000 `
-  -v D:\proyectos\proyecto-general\services\auth\.env:/app/services/auth/.env:ro `
+  -v D:\proyectos\proyecto-general\services\auth\auth.env:/app/services/auth/auth.env:ro `
   -v D:\proyectos\proyecto-general\services\auth\secrets:/app/services/auth/secrets:ro `
   -e DB_HOST=host.docker.internal `
   auth:0.1.0
@@ -87,7 +87,7 @@ docker run --rm -p 8001:8000 `
   servicio (`db`) si auth y PostgreSQL están en el mismo Compose.
 - Si pasas la configuración con `docker run --env-file`, los valores **no deben
   llevar comillas**: `--env-file` las conserva como parte del valor
-  (`DB_PASSWORD="x"` se lee con comillas). Montar el `.env` como archivo, o
+  (`DB_PASSWORD="x"` se lee con comillas). Montar `auth.env` como archivo, o
   `env_file` de Docker Compose, sí las interpretan.
 - Migraciones: son un paso aparte, no se ejecutan al arrancar:
   `docker run --rm ... auth:0.1.0 sh -c "python -m alembic upgrade head && python scripts/migrate_audit.py"`.

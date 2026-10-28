@@ -120,7 +120,7 @@ COMPANIES = [
             "ADMIN_TI": ["ADMIN_TI"],
             "ADMIN_CONT": ["ADMIN_CONT"],
         },
-        # Puesto que recibe el admin del .env en esta empresa, o None.
+        # Puesto que recibe el admin de auth.env en esta empresa, o None.
         # El admin del seed es master (is_platform_admin) y ya accede a todas
         # las empresas; un puesto solo sirve para que figure como miembro en /me.
         "admin_position_code": None,

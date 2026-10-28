@@ -118,7 +118,7 @@ Un comando local evita exponer una ruta de bootstrap, pero también debe estar l
 | --- | --- | --- | --- |
 | PROJECT_NAME | Título mostrado por FastAPI en /docs | Auth | Opcional |
 
-SettingsConfigDict permite leer .env. extra="ignore" ignora ajustes adicionales antiguos; no los activa. No se configura aún una conexión, JWT, CORS ni políticas.
+SettingsConfigDict permite leer <servicio>.env. extra="ignore" ignora ajustes adicionales antiguos; no los activa. No se configura aún una conexión, JWT, CORS ni políticas.
 
 ## Configuraciones retiradas: explicación para cuando hagan falta
 

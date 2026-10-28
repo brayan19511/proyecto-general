@@ -3,7 +3,7 @@
 # notificaciones de desarrollo/notificaciones (envío de los avisos), en esta
 # máquina vía host.docker.internal.
 #
-#   docker compose --env-file ../../services/pagos-proveedores/.env up -d --build   (desde desarrollo/pagos-proveedores)
+#   docker compose --env-file ../../services/pagos-proveedores/pagos-proveedores.env up -d --build   (desde desarrollo/pagos-proveedores)
 #
 # Para enviar un lote, el token debe emitirlo ese auth y la empresa necesita en
 # notificaciones una cuenta SMTP y la plantilla (payment_provider_summary o la
@@ -13,8 +13,7 @@ name: dev-pagos-proveedores
 
 x-pagos-proveedores: &pagos-proveedores
   image: pagos-proveedores:dev
-  volumes:
-    - ../../services/pagos-proveedores/.env:/app/services/pagos-proveedores/.env:ro
+  env_file: ../../services/pagos-proveedores/pagos-proveedores.env
   environment:
     DB_HOST: db
     DB_PORT: "5432"

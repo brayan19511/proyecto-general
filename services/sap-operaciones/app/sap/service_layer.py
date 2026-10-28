@@ -11,9 +11,19 @@
   nunca con la clave ni el cuerpo enviado.
 - Entidad y acción se arman como segmentos validados ({Entidad}({DocEntry})/{Acción}),
   nunca como una URL libre.
+- Lecturas (get_json, stream): no modifican SAP, así que un corte de red es
+  "no disponible" y no "incierto". Tampoco se reintentan (salvo el 401).
+- Sesión: dura lo que SAP indica en el login (SessionTimeout, en minutos) y se
+  renueva con cada uso. Un cliente puede compartirse entre solicitudes
+  (app/sap/session_pool.py): el login va con candado y, si varias reciben 401 a
+  la vez, solo una vuelve a iniciar sesión.
 """
 
 import re
+import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import httpx
 
@@ -44,6 +54,10 @@ class SapRequestError(SapError):
     def __init__(self, message: str, http_status: int | None = None, body=None):
         super().__init__(message, http_status)
         self.body = body  # Cuerpo de la respuesta de SAP (acotado), para el detalle del ítem.
+
+
+class SapNotFoundError(SapError):
+    """Lectura de algo que no existe en SAP (404)."""
 
 
 class SapUnavailableError(SapError):
@@ -90,6 +104,10 @@ def sap_message(response: httpx.Response, limit: int = 1000) -> str:
     return (text or f"HTTP {response.status_code}")[:limit]
 
 
+DEFAULT_SESSION_SECONDS = 30 * 60  # Si SAP no informa SessionTimeout (su default es 30 min).
+SESSION_MARGIN_SECONDS = 60  # Se renueva un poco antes de que SAP la dé por vencida.
+
+
 class ServiceLayerClient:
     def __init__(self, base_url: str | None, company_db: str, user: str, password: str):
         """base_url: la del trabajo o la configurada para la empresa (job_service.service_layer_url)."""
@@ -109,6 +127,10 @@ class ServiceLayerClient:
             trust_env=False,
         )
         self._logged_in = False
+        self._lock = threading.RLock()  # Login y renovación, de a uno por cliente.
+        self._generation = 0  # Sube en cada login: evita renovar dos veces la misma sesión.
+        self._session_seconds = DEFAULT_SESSION_SECONDS
+        self._last_used = 0.0  # time.monotonic() del último uso con respuesta de SAP.
 
     def __enter__(self) -> "ServiceLayerClient":
         return self
@@ -117,6 +139,10 @@ class ServiceLayerClient:
         self.close()
 
     def login(self) -> None:
+        with self._lock:
+            self._login()
+
+    def _login(self) -> None:
         try:
             response = self._http.post("Login", json=self._login_body)
         except httpx.HTTPError as exc:
@@ -126,18 +152,42 @@ class ServiceLayerClient:
             raise SapAuthError(f"SAP rechazó el inicio de sesión: {sap_message(response, 300)}", response.status_code)
         if response.status_code >= 400:
             raise SapAuthError(f"SAP no permitió iniciar sesión: {sap_message(response, 300)}", response.status_code)
+        try:
+            minutes = int(response.json().get("SessionTimeout"))
+        except (ValueError, TypeError, AttributeError):
+            minutes = 0
+        self._session_seconds = minutes * 60 if minutes > 0 else DEFAULT_SESSION_SECONDS
         self._logged_in = True
+        self._generation += 1
+        self._last_used = time.monotonic()
+
+    def _session(self) -> int:
+        """Inicia sesión si no hay una vigente. Devuelve la generación de la sesión usada."""
+        with self._lock:
+            idle = time.monotonic() - self._last_used
+            if not self._logged_in or idle > max(self._session_seconds - SESSION_MARGIN_SECONDS, 60):
+                self._login()
+            return self._generation
+
+    def _renew(self, generation: int) -> None:
+        """SAP respondió 401: nuevo login, salvo que otra solicitud ya lo haya hecho."""
+        with self._lock:
+            if self._generation == generation:
+                self._logged_in = False
+                self._login()
+
+    def _touch(self) -> None:
+        self._last_used = time.monotonic()
 
     def post(self, path: str, body: dict | None = None) -> tuple[int, object]:
         """POST que modifica SAP. Devuelve (status HTTP, cuerpo de la respuesta) si fue exitoso."""
-        if not self._logged_in:
-            self.login()
+        generation = self._session()
         response = self._send(path, body)
         if response.status_code == 401:
             # Sesión vencida: SAP no ejecutó la solicitud. Nuevo login y un único reintento.
-            self._logged_in = False
-            self.login()
+            self._renew(generation)
             response = self._send(path, body)
+        self._touch()
         if response.status_code >= 400:
             raise SapRequestError(sap_message(response), response.status_code, response_body(response))
         return response.status_code, response_body(response)
@@ -152,6 +202,51 @@ class ServiceLayerClient:
             raise SapConnectionError("SAP no respondió a tiempo: el resultado es incierto.") from exc
         except httpx.HTTPError as exc:
             raise SapConnectionError("Se perdió la conexión con SAP: el resultado es incierto.") from exc
+
+    def get_json(self, path: str, params: dict | None = None, headers: dict | None = None) -> object:
+        """GET de lectura que devuelve JSON. SapNotFoundError si SAP responde 404."""
+        response = self._read(lambda: self._http.get(path, params=params, headers=headers))
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise SapRequestError("SAP devolvió una respuesta que no es JSON.", response.status_code) from exc
+
+    @contextmanager
+    def stream(self, path: str, params: dict | None = None) -> Iterator[httpx.Response]:
+        """GET de un archivo sin cargarlo entero en memoria. Úsalo con with: al salir se cierra."""
+        response = self._read(lambda: self._http.send(self._http.build_request("GET", path, params=params), stream=True))
+        try:
+            yield response
+        except httpx.HTTPError as exc:
+            # Corte mientras se leía el archivo.
+            raise SapUnavailableError("Se perdió la conexión con SAP durante la descarga.") from exc
+        finally:
+            response.close()
+
+    def _read(self, send) -> httpx.Response:
+        """Lectura con login perezoso y un único reintento si la sesión venció (401)."""
+        generation = self._session()
+        response = self._send_read(send)
+        if response.status_code == 401:
+            response.close()
+            self._renew(generation)
+            response = self._send_read(send)
+        self._touch()
+        if response.status_code >= 400:
+            response.read()  # En streaming el cuerpo del error aún no se leyó.
+            response.close()
+            error_class = SapNotFoundError if response.status_code == 404 else SapRequestError
+            raise error_class(sap_message(response, 300), response.status_code)
+        return response
+
+    @staticmethod
+    def _send_read(send) -> httpx.Response:
+        try:
+            return send()
+        except httpx.TimeoutException as exc:
+            raise SapUnavailableError("SAP no respondió a tiempo.") from exc
+        except httpx.HTTPError as exc:
+            raise SapUnavailableError(_network_message(exc)) from exc
 
     def close(self) -> None:
         if self._logged_in:

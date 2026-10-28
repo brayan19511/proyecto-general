@@ -163,6 +163,14 @@ equipos. Pasos en `services/edge/README.md`. Solo caddy publica puertos
 - **sap-operaciones:** `SAP_SERVICE_LAYER_URL` (por defecto; cada empresa puede
   tener la suya en SAP › Configuración, solo la cambia el administrador),
   `SAP_VERIFY_TLS` y `CREDENTIALS_ENCRYPTION_KEYS` en `sap-operaciones.env`.
+- **Documentos y anexos SAP:** `SAP_DOCUMENTS_USER` / `SAP_DOCUMENTS_PASSWORD`
+  (usuario SAP de solo lectura) y `SAP_ATTACHMENTS_DIR` en `sap-operaciones.env`.
+  El servidor del Service Layer no tiene montada `\\10.0.0.13\Anexo`, así que la
+  API la lee montada en solo lectura. **Pendiente de definir el montaje en
+  producción** (no está en estos composes): en desarrollo es un volumen CIFS
+  (`desarrollo/plataforma-completa/compose.anexos.yml`); en un servidor Linux
+  también puede montarse en el sistema (`/etc/fstab`, solo lectura) y pasarse al
+  contenedor de la API con un bind mount `:ro`.
 - **Worker de SAP siempre levantado:** sin `sap-operaciones-worker` los trabajos
   quedan en cola. Al actualizar, `stop_grace_period: 3m` deja terminar el ítem en
   curso y el trabajo vuelve a la cola. Sin reintentos automáticos: un ítem cortado

@@ -167,6 +167,11 @@ SAP_OPERACIONES_ROUTES: tuple[Route, ...] = (
     # Bases SAP sugeridas y configuración (URL del Service Layer) por empresa.
     Route("/sap-operaciones/databases", WRITE),
     Route("/sap-operaciones/settings", WRITE),
+    # Documentos SAP y anexos (sap_documents.view). POST solo para registrar una
+    # descarga (valida cada anexo en SAP); va antes de la general. La descarga
+    # pasa por partes desde SAP: más que los 30 s por defecto para archivos grandes.
+    Route("/sap-operaciones/documents/downloads", POST, timeout=120),
+    Route("/sap-operaciones/documents", READ, timeout=120),
     # Logs técnicos propios (solo platform admin; lo valida el servicio).
     Route("/sap-operaciones/admin/logs", READ),
 )

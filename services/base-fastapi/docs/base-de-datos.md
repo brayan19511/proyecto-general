@@ -80,7 +80,7 @@ python -m pip install -r requirements.txt
 Si no se desea activar el entorno, sustituir python en los comandos por
 .\enviroment\Scripts\python.exe. No hace falta modificar la política de PowerShell.
 
-La aplicación lee services/auth/.env, no el .env de proyecto-central.
+La aplicación lee services/<servicio>/<servicio>.env, no el archivo de variables del Compose.
 El de Compose configura el servidor; el de auth indica cómo conectarse.
 No publicar ni copiar contraseñas reales a la documentación.
 
@@ -128,11 +128,11 @@ No se usa Base.metadata.create_all ni se escribe información de negocio.
 La prueba no valida modelos, permisos para crear tablas ni compatibilidad de migraciones.
 
 Errores frecuentes:
-- Falta DB_NAME/DB_USER/DB_PASSWORD: revisar el .env de auth.
+- Falta DB_NAME/DB_USER/DB_PASSWORD: revisar el <servicio>.env.
 - No module named psycopg: instalar requirements con el mismo Python que ejecuta la prueba.
 - Intenta cargar pyodbc usando PostgreSQL: revisar DB_ENGINE y la condición del paso 1.
 - Conexión rechazada: comprobar contenedor, host y puerto publicado.
-- Autenticación fallida: comprobar credenciales. Cambiar el .env de Compose no cambia
+- Autenticación fallida: comprobar credenciales. Cambiar el archivo de variables del Compose no cambia
   automáticamente contraseñas de una base ya inicializada en un volumen.
 
 ## 4. Instalar e inicializar Alembic

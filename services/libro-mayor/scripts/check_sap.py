@@ -1,6 +1,6 @@
 """Comprueba la conexión a SAP HANA y el contrato de la vista, sin escribir nada.
 
-Usa SAP_HOST/SAP_USER/SAP_PASSWORD del .env. Ejemplos (desde services/libro-mayor):
+Usa SAP_HOST/SAP_USER/SAP_PASSWORD de libro-mayor.env. Ejemplos (desde services/libro-mayor):
 
     python scripts/check_sap.py --schema SBO_RASH_PRODUCCION --view VW_LIBRO_MAYOR_PERSONALIZADO_2
     python scripts/check_sap.py --schema SBO_RASH_PRODUCCION --view VW_LIBRO_MAYOR_PERSONALIZADO_2 \

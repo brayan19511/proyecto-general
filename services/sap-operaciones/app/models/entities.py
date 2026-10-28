@@ -220,6 +220,58 @@ class ChangeHistory(AuditMixin, Base):
     trace_id: Mapped[str | None] = mapped_column(String(36))
 
 
+DOWNLOAD_MODES = ("single", "sequential", "zip")
+DOWNLOAD_FILE_STATUSES = ("pending", "delivered", "failed")
+
+
+class DocumentDownload(AuditMixin, Base):
+    """Registro de negocio de una descarga de anexos SAP (quién bajó qué), solo anexado.
+
+    Se crea al pedir la descarga, con la lista de archivos ya validada contra
+    SAP. mode: single (un archivo), sequential (varios, uno por uno) o zip.
+    created_by = actor que descarga; solo él puede bajar sus archivos.
+    """
+
+    __tablename__ = "document_downloads"
+    __table_args__ = (
+        CheckConstraint(f"mode IN {DOWNLOAD_MODES}", name="ck_document_downloads_mode"),
+        Index("ix_document_downloads_company_created", "company_id", "created_at"),
+        Index("ix_document_downloads_created_by", "created_by", "created_at"),
+    )
+
+    company_id: Mapped[str] = mapped_column(String(36))
+    company_db: Mapped[str] = mapped_column(String(100))
+    mode: Mapped[str] = mapped_column(String(20))
+    file_count: Mapped[int] = mapped_column(Integer)
+    trace_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class DocumentDownloadFile(AuditMixin, Base):
+    """Un archivo de la descarga: documento, anexo y si llegó a entregarse.
+
+    Lo único que cambia después del alta es la entrega: status (pending →
+    delivered / failed), delivered_at y error (mensaje seguro de mostrar).
+    """
+
+    __tablename__ = "document_download_files"
+    __table_args__ = (
+        CheckConstraint(f"status IN {DOWNLOAD_FILE_STATUSES}", name="ck_document_download_files_status"),
+        UniqueConstraint("download_id", "seq"),
+    )
+
+    download_id: Mapped[str] = mapped_column(ForeignKey("document_downloads.id"))
+    seq: Mapped[int] = mapped_column(Integer)
+    type_code: Mapped[str] = mapped_column(String(10))
+    doc_entry: Mapped[int] = mapped_column(Integer)
+    doc_num: Mapped[int | None] = mapped_column(Integer)
+    attachment_entry: Mapped[int] = mapped_column(Integer)
+    line: Mapped[int] = mapped_column(Integer)
+    file_name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(String(300))
+
+
 def reject_change(*_):
     """Impide modificar o eliminar eventos históricos durante el flush del ORM."""
     raise ValueError("Los eventos históricos son de solo anexado")
@@ -230,3 +282,6 @@ event.listen(JobEvent, "before_update", reject_change)
 event.listen(JobEvent, "before_delete", reject_change)
 event.listen(ChangeHistory, "before_update", reject_change)
 event.listen(ChangeHistory, "before_delete", reject_change)
+event.listen(DocumentDownload, "before_update", reject_change)
+event.listen(DocumentDownload, "before_delete", reject_change)
+event.listen(DocumentDownloadFile, "before_delete", reject_change)

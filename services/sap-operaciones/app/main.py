@@ -6,11 +6,12 @@ from fastapi.responses import JSONResponse
 
 from platform_audit import AuditConfig, AuditMiddleware
 
-from app.api.routes import health_router, jobs_router, logs_router
+from app.api.routes import documents_router, health_router, jobs_router, logs_router
 from app.clients.auth_client import auth_client
 from app.core.audit import SENSITIVE_KEY_PARTS, SENSITIVE_KEYS
 from app.core.config import settings
 from app.core.db.connection import engine
+from app.sap import session_pool
 from app.services.errors import ServiceError
 
 # Todo el servicio vive bajo su prefijo: la misma ruta directo y a través de la
@@ -22,6 +23,7 @@ PREFIX = "/sap-operaciones"
 async def lifespan(_: FastAPI):
     yield
     auth_client.close()  # Libera las conexiones hacia auth al apagar.
+    session_pool.close_all()  # Cierra las sesiones del Service Layer de /documents.
 
 
 app = FastAPI(
@@ -72,6 +74,7 @@ def service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
 api = APIRouter(prefix=PREFIX)
 api.include_router(health_router.router)
 api.include_router(jobs_router.router)
+api.include_router(documents_router.router)
 api.include_router(logs_router.router)
 
 app.include_router(api)

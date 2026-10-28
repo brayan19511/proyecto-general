@@ -32,7 +32,7 @@ class SeedConflictError(Exception):
 
 
 class SeedService:
-    """Crea los permisos y las empresas de data.py con su estructura, y el admin del .env.
+    """Crea los permisos y las empresas de data.py con su estructura, y el admin de auth.env.
 
     Idempotente: lo que ya existe, aunque esté dado de baja, no se modifica
     ni se reactiva. Todo ocurre en una sola transacción.

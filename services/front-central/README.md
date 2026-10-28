@@ -24,7 +24,7 @@ Se construye y levanta con el resto de la plataforma, desde `desarrollo/platafor
 (solo: `desarrollo/front-central`; producción: `produccion/`):
 
 ```bash
-docker compose --env-file ../../services/apigateway/.env up -d --build front-central
+docker compose --env-file ../../services/apigateway/apigateway.env up -d --build front-central
 ```
 
 - Imagen en dos etapas: `node:22-alpine` compila; `nginx:1.27-alpine` sirve
@@ -32,7 +32,7 @@ docker compose --env-file ../../services/apigateway/.env up -d --build front-cen
 - No publica puerto propio: se entra por el proxy de borde (caddy) en
   `https://SITE_ADDRESS/`, con la API en el mismo origen (sin CORS). Ver
   `services/apigateway/readme.md` (Acceso desde la red).
-- Configuración (en `services/apigateway/.env`, el `--env-file` del compose):
+- Configuración (en `services/apigateway/apigateway.env`, el `--env-file` del compose):
 
   | Variable | Default | Para qué |
   |---|---|---|

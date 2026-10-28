@@ -12,7 +12,7 @@ autorización ni coordinación (ver `docs/arquitectura.md`).
 | `Caddyfile.http` | Sin certificado: red local mientras no haya dominio (default en desarrollo) |
 | `Caddyfile.internal` | Certificados de la CA propia de Caddy (solo pruebas en esta máquina) |
 | `Caddyfile.dns` | Dominio propio + Let's Encrypt por desafío DNS-01 |
-| `.env.example` | `ACME_EMAIL` y `CLOUDFLARE_API_TOKEN` (solo modo dns) |
+| `edge.env.example` | `ACME_EMAIL` y `CLOUDFLARE_API_TOKEN` (solo modo dns) |
 
 ## Modos de certificado (`CADDY_TLS`)
 
@@ -24,7 +24,7 @@ autorización ni coordinación (ver `docs/arquitectura.md`).
 
 ### Modo http (red local, sin dominio)
 
-En el `.env` del compose: `CADDY_TLS=http` y `EDGE_BIND=0.0.0.0`; abrir el
+En las variables del compose (`apigateway.env` en desarrollo, `.env` en producción): `CADDY_TLS=http` y `EDGE_BIND=0.0.0.0`; abrir el
 puerto 80 (y 8443 si se usa pgAdmin) en el firewall de Windows. Se entra con
 `http://<IP de la PC>/` y pgAdmin con `http://<IP>:8443/`. Acepta cualquier
 nombre o IP con que se llegue (`:80`).
@@ -48,9 +48,9 @@ localhost y forzar HTTPS: entrar por la IP o borrar HSTS de ese sitio.
    privadas (protección "DNS rebinding"), agregar una excepción para el dominio
    o crear el mismo registro en el DNS interno.
 3. Crear en Cloudflare un token de API con permiso **Zone > DNS > Edit** solo
-   para esa zona. Copiar `services/edge/.env.example` a `services/edge/.env`
+   para esa zona. Copiar `services/edge/edge.env.example` a `services/edge/edge.env`
    (ignorado por git) y completar `ACME_EMAIL` y `CLOUDFLARE_API_TOKEN`.
-4. En el `.env` del compose: `CADDY_TLS=dns`, `SITE_ADDRESS=plataforma.rashperu.com`
+4. En las variables del compose (`apigateway.env` en desarrollo, `.env` en producción): `CADDY_TLS=dns`, `SITE_ADDRESS=plataforma.rashperu.com`
    y `EDGE_BIND=0.0.0.0` (para que otros equipos lleguen).
 5. `docker compose up -d --build caddy` y abrir `https://plataforma.rashperu.com`.
    El primer certificado tarda unos segundos (`docker compose logs caddy`).

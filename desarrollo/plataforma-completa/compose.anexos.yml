@@ -1,0 +1,37 @@
+# Carpeta de anexos de SAP (\\10.0.0.13\Anexo) para sap-operaciones, en solo lectura.
+#
+# Decisión del usuario (2026-10-28): el servidor del Service Layer no tiene la
+# carpeta montada, así que sap-operaciones lee los anexos de ella directamente.
+# Archivo aparte para que la plataforma siga levantando sin acceso a la carpeta:
+#
+#   docker compose --env-file ../../services/apigateway/apigateway.env -f docker-compose.yml -f compose.anexos.yml up -d --build
+#
+# Variables (en el mismo --env-file):
+#   SAP_ANEXOS_SHARE     //10.0.0.13/Anexo (default)
+#   SAP_ANEXOS_USER      usuario con permiso de LECTURA en la carpeta, sin dominio (p. ej. transfer)
+#   SAP_ANEXOS_DOMAIN    su dominio (p. ej. RASHPERU); vacío si es una cuenta local del servidor.
+#                        Va aparte: Docker monta sin mount.cifs y el kernel no separa
+#                        "DOMINIO/usuario" (falla con "permission denied").
+#   SAP_ANEXOS_PASSWORD  su clave. Sin comas (separan las opciones del montaje); un "$"
+#                        se escribe "$$" en el .env (Compose lo interpreta como variable).
+#
+# El montaje lo hace Docker (CIFS/SMB) al crear el volumen: "ro" y file_mode/dir_mode
+# de solo lectura. La clave queda en la definición del volumen (docker volume
+# inspect la muestra): usar un usuario dedicado, solo con lectura en esa carpeta.
+# Si se cambian usuario o clave: docker volume rm proyecto-central_sap_anexos
+# (solo quita el montaje, no toca los archivos) y volver a levantar.
+
+services:
+  sap-operaciones:
+    volumes:
+      - sap_anexos:/mnt/sap-anexos:ro
+    environment:
+      SAP_ATTACHMENTS_DIR: /mnt/sap-anexos
+
+volumes:
+  sap_anexos:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: ${SAP_ANEXOS_SHARE:-//10.0.0.13/Anexo}
+      o: "ro,username=${SAP_ANEXOS_USER:?Falta SAP_ANEXOS_USER},password=${SAP_ANEXOS_PASSWORD:?Falta SAP_ANEXOS_PASSWORD},domain=${SAP_ANEXOS_DOMAIN:-},vers=3.0,file_mode=0444,dir_mode=0555,noperm"

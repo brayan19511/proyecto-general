@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """Lee configuración del entorno y del .env del servicio; no conecta a la BD."""
+    """Lee configuración del entorno y de apigateway.env (carpeta del servicio); no conecta a la BD."""
 
     # Datos mostrados en /docs y en los logs.
     PROJECT_NAME: str = "API central"
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     DB_USER: str = Field(min_length=1)
     DB_PASSWORD: SecretStr = Field(min_length=1)  # Oculta la representación; no cifra.
 
-    # Lista JSON en .env con los orígenes web permitidos por CORS (ver main.py).
+    # Lista JSON en apigateway.env con los orígenes web permitidos por CORS (ver main.py).
     CORS_ORIGINS: list[str] = Field(default_factory=list)
 
     # Proxies delante de la central (Nginx, balanceador): IPs exactas o rangos
@@ -133,9 +133,9 @@ class Settings(BaseSettings):
             raise ValueError("Con SAP_OPERACIONES_ENABLED=true falta SAP_OPERACIONES_URL")
         return self
 
-    # Las variables del proceso tienen prioridad sobre .env.
+    # Las variables del proceso tienen prioridad sobre apigateway.env (en Docker llegan con env_file).
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=BASE_DIR / "apigateway.env",
         env_file_encoding="utf-8",
         extra="ignore",
         # Una variable vacía (PROJECT_NAME=) se trata como no definida y usa su default.

@@ -1,5 +1,7 @@
 # Contexto de build = raíz del repositorio. Nada de secretos ni entornos locales.
 **/.env
+# Configuración por servicio (sap-operaciones.env, edge.env, ...): se monta, nunca va en la imagen.
+**/*.env
 **/secrets/
 **/enviroment/
 **/.venv/

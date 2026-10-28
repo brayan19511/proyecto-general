@@ -11,10 +11,15 @@ Acumulativos, alcance company:
 |                        | administrar la lista de bases SAP de la empresa             |
 
 Ver las credenciales guardadas: solo el administrador de plataforma.
+
+Documentos y anexos (acuerdo del usuario, 2026-10-27), independiente de los
+anteriores: sap_documents.view busca documentos SAP, lista y descarga sus anexos.
 """
 
 VIEW = "sap_operations.view"
 EXECUTE = "sap_operations.execute"
+DOCUMENTS_VIEW = "sap_documents.view"
 
 CAN_VIEW = (VIEW, EXECUTE)
 CAN_EXECUTE = (EXECUTE,)
+CAN_VIEW_DOCUMENTS = (DOCUMENTS_VIEW,)

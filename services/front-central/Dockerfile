@@ -2,7 +2,7 @@
 # nginx no reenvía la API: en Docker lo hace el proxy de borde (services/edge),
 # que sirve front y API en el mismo origen. Build: VITE_API_URL=/ (mismo origen).
 #
-#   docker compose --env-file ../../services/apigateway/.env up -d --build front-central
+#   docker compose --env-file ../../services/apigateway/apigateway.env up -d --build front-central
 #   (desde desarrollo/plataforma-completa)
 
 # --- 1. Compilar ---

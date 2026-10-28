@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import CompanyContext, require_company_permission, require_platform_admin_in_company
 from app.core.config import settings
 from app.core.db.connection import get_db
-from app.core.permissions import CAN_EXECUTE, CAN_VIEW
+from app.core.permissions import CAN_EXECUTE, CAN_VIEW, CAN_VIEW_DOCUMENTS
 from app.models.entities import Job
 from app.schemas.jobs import (
     Credentials,
@@ -228,7 +228,9 @@ def update_settings(data: SettingsIn, ctx: CompanyContext = Depends(require_plat
 
 
 @router.get("/databases", response_model=list[DatabaseOut], operation_id="listSapDatabases")
-def list_databases(ctx: CompanyContext = Depends(require_company_permission(*CAN_VIEW)), db: Session = Depends(get_db)):
+def list_databases(ctx: CompanyContext = Depends(require_company_permission(*CAN_VIEW, *CAN_VIEW_DOCUMENTS)),
+                   db: Session = Depends(get_db)):
+    """Lectura también con sap_documents.view: la búsqueda de documentos elige la base de esta lista."""
     return job_service.list_databases(db, ctx)
 
 

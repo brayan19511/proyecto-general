@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """Lee configuración del entorno y del .env del servicio; no conecta a la BD."""
+    """Lee configuración del entorno y de <servicio>.env (carpeta del servicio); no conecta a la BD."""
 
     # Plantilla: al copiarla, cambia estos defaults por los del nuevo servicio.
     PROJECT_NAME: str = "Base"
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     DB_USER: str = Field(min_length=1)
     DB_PASSWORD: SecretStr = Field(min_length=1)  # Oculta la representación; no cifra.
 
-    # Lista JSON en .env con los orígenes web permitidos por CORS (ver main.py).
+    # Lista JSON en <servicio>.env con los orígenes web permitidos por CORS (ver main.py).
     CORS_ORIGINS: list[str] = Field(default_factory=list)
 
     # Proxies propios (API central, balanceador): IPs exactas o rangos CIDR
@@ -42,9 +42,9 @@ class Settings(BaseSettings):
     # X-Parent-Operation-Id; si no, un cliente podría falsificarlos. Vacía = sin proxies.
     TRUSTED_PROXIES: list[str] = Field(default_factory=list)
 
-    # Las variables del proceso tienen prioridad sobre .env.
+    # Las variables del proceso tienen prioridad sobre <servicio>.env (en Docker llegan con env_file).
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=BASE_DIR / f"{BASE_DIR.name}.env",
         env_file_encoding="utf-8",
         extra="ignore",
         # Una variable vacía (PROJECT_NAME=) se trata como no definida y usa su default.

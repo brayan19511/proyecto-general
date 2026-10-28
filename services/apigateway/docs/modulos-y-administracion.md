@@ -29,7 +29,7 @@ base, TTL 5 s) y la **lista negra de IPs**. Pendiente: límites por IP (rate lim
 | `LIBRO_MAYOR_ENABLED` | `false` | `true` = publica `/libro-mayor/*`; con `false` responde 503 y no se crea su cliente HTTP |
 | `LIBRO_MAYOR_URL` | — | Obligatoria solo si `LIBRO_MAYOR_ENABLED=true` |
 
-Aplicar un cambio: editar el `.env` de la central y reiniciar **solo** la central.
+Aplicar un cambio: editar `apigateway.env` y recrear **solo** la central (`up -d apigateway`: `restart` no relee `env_file`).
 
 ```powershell
 docker compose restart apigateway
@@ -117,7 +117,7 @@ de la central (`gateway.ip_blocks`), no en memoria ni en la configuración.
 Protecciones para no quedarse fuera:
 
 - La API rechaza (409) un rango que contenga la IP de quien lo crea.
-- `IP_BLOCKS_ENABLED=false` en el `.env` + reiniciar la central desactiva toda
+- `IP_BLOCKS_ENABLED=false` en `apigateway.env` + recrear la central (`up -d apigateway`) desactiva toda
   la lista negra (recuperación si se bloquea a quien no debía).
 
 Validaciones: IP/rango inválido → 422; `expires_at` sin zona horaria o pasada → 422;

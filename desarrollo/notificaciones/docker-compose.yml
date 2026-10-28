@@ -2,7 +2,7 @@
 # desde services/notificaciones. Valida tokens con un auth corriendo: por
 # defecto el de desarrollo/auth (http://host.docker.internal:8000).
 #
-#   docker compose --env-file ../../services/notificaciones/.env up -d --build   (desde desarrollo/notificaciones)
+#   docker compose --env-file ../../services/notificaciones/notificaciones.env up -d --build   (desde desarrollo/notificaciones)
 #
 # El worker sale a los servidores SMTP configurados en las cuentas de la empresa.
 
@@ -10,8 +10,7 @@ name: dev-notificaciones
 
 x-notificaciones: &notificaciones
   image: notificaciones:dev
-  volumes:
-    - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+  env_file: ../../services/notificaciones/notificaciones.env
   environment:
     DB_HOST: db
     DB_PORT: "5432"

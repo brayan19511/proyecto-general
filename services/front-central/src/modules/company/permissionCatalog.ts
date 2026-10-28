@@ -44,6 +44,7 @@ const GROUPS: Record<string, string> = {
   payments: 'Pago a proveedores',
   lastmiller: 'Canales de venta (lastmiller)',
   sap_operations: 'SAP',
+  sap_documents: 'SAP',
 }
 
 const TEXTS: Record<string, { label: string; description: string }> = {
@@ -71,6 +72,7 @@ const TEXTS: Record<string, { label: string; description: string }> = {
   'lastmiller.edit': { label: 'Editar SKU de canales', description: 'Incluye ver. Activar o desactivar SKU y dar de alta o baja promociones una por una.' },
   'sap_operations.view': { label: 'Ver operaciones SAP', description: 'Ver los trabajos masivos en SAP, sus resultados y las bases SAP.' },
   'sap_operations.execute': { label: 'Ejecutar operaciones SAP', description: 'Incluye ver. Crear, ejecutar, cancelar y reanudar trabajos masivos (acciones y conciliaciones) y administrar las bases SAP.' },
+  'sap_documents.view': { label: 'Documentos y anexos SAP', description: 'Buscar documentos SAP y descargar sus anexos (cada descarga queda registrada).' },
   'lastmiller.import': { label: 'Cargas masivas de canales', description: 'Incluye todo lo anterior. Cargas masivas de on/off y de promociones de PedidosYa.' },
 }
 

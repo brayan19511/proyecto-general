@@ -1,25 +1,31 @@
 # desarrollo
 
 Composes para trabajar en esta máquina. Construyen las imágenes desde
-`services/*/Dockerfile` (no se copian Dockerfiles aquí) y montan el `.env` de
+`services/*/Dockerfile` (no se copian Dockerfiles aquí) y pasan el `<servicio>.env` de
 cada servicio. Todo escucha en `127.0.0.1` salvo el proxy de borde, que se abre
 a la red solo si se configura (`EDGE_BIND`).
 
 | Carpeta | Proyecto Docker | Qué levanta | Comando (desde la carpeta) |
 |---|---|---|---|
-| `plataforma-completa/` | `proyecto-central` | Todo: db, pgAdmin, auth, libro-mayor (API + worker), notificaciones (API + worker), pagos-proveedores, canales-venta, sap-operaciones (API + worker), central, front y caddy | `docker compose --env-file ../../services/apigateway/.env up -d --build` |
-| `auth/` | `dev-auth` | Base propia (5433) + auth (8000) | `docker compose --env-file ../../services/auth/.env up -d --build` |
-| `libro-mayor/` | `dev-libro-mayor` | Base propia (5434) + API (8002) + worker; usa el auth de `auth/` | `docker compose --env-file ../../services/libro-mayor/.env up -d --build` |
-| `notificaciones/` | `dev-notificaciones` | Base propia (5436) + API (8010) + worker; usa el auth de `auth/` | `docker compose --env-file ../../services/notificaciones/.env up -d --build` |
-| `pagos-proveedores/` | `dev-pagos-proveedores` | Base propia (5437) + API (8012); usa `auth/` y `notificaciones/` | `docker compose --env-file ../../services/pagos-proveedores/.env up -d --build` |
-| `apigateway/` | `dev-apigateway` | Base propia (5435) + central (8011); reenvía a `auth/`, `libro-mayor/`, `notificaciones/` y `pagos-proveedores/` | `docker compose --env-file ../../services/apigateway/.env up -d --build` |
+| `plataforma-completa/` | `proyecto-central` | Todo: db, pgAdmin, auth, libro-mayor (API + worker), notificaciones (API + worker), pagos-proveedores, canales-venta, sap-operaciones (API + worker), central, front y caddy | `docker compose --env-file ../../services/apigateway/apigateway.env up -d --build` |
+| `auth/` | `dev-auth` | Base propia (5433) + auth (8000) | `docker compose --env-file ../../services/auth/auth.env up -d --build` |
+| `libro-mayor/` | `dev-libro-mayor` | Base propia (5434) + API (8002) + worker; usa el auth de `auth/` | `docker compose --env-file ../../services/libro-mayor/libro-mayor.env up -d --build` |
+| `notificaciones/` | `dev-notificaciones` | Base propia (5436) + API (8010) + worker; usa el auth de `auth/` | `docker compose --env-file ../../services/notificaciones/notificaciones.env up -d --build` |
+| `pagos-proveedores/` | `dev-pagos-proveedores` | Base propia (5437) + API (8012); usa `auth/` y `notificaciones/` | `docker compose --env-file ../../services/pagos-proveedores/pagos-proveedores.env up -d --build` |
+| `apigateway/` | `dev-apigateway` | Base propia (5435) + central (8011); reenvía a `auth/`, `libro-mayor/`, `notificaciones/` y `pagos-proveedores/` | `docker compose --env-file ../../services/apigateway/apigateway.env up -d --build` |
 | `front-central/` | `dev-front-central` | El front en nginx (3001), contra una central ya corriendo | `docker compose up -d --build` |
 
 - canales-venta y sap-operaciones solo existen en **Plataforma completa** (no
   tienen compose propio en esta carpeta). En local también se pueden correr con
   `python -m uvicorn app.main:app --reload --port 8014` (canales-venta) o
   `--port 8016` (sap-operaciones), con su entorno en Python 3.14.
-- Lanzar siempre con `--env-file ../../services/apigateway/.env`: sin él, el
+- Configuración de cada servicio: `services/<servicio>/<servicio>.env` (p. ej.
+  `sap-operaciones.env`, `edge.env`; decisión del usuario, 2026-10-28), el mismo
+  nombre que en producción y en local (`uvicorn`). Los composes lo pasan con
+  `env_file` (variables del contenedor): un cambio se aplica con `up -d`, que
+  recrea el contenedor; `restart` no lo relee. Compose interpreta `$` en los
+  valores: escribir `$$`. Plantilla: `<servicio>.env.example`.
+- Lanzar Plataforma completa con `--env-file ../../services/apigateway/apigateway.env`: sin él, el
   healthcheck de la base queda sin usuario (`role "-d" does not exist`).
 - **Plataforma completa** es la que se usa a diario: un solo compose, redes
   internas entre servicios y HTTPS por caddy (`https://localhost`). Detalle de
@@ -34,10 +40,10 @@ a la red solo si se configura (`EDGE_BIND`).
 - Los puertos de un servicio solo (8010, 8012…) son los mismos que usa ese
   servicio con `uvicorn` en local: no levantar los dos a la vez (o cambiar
   `DEV_<SERVICIO>_PORT`).
-- **`--env-file`**: el compose toma de ese `.env` las credenciales de su base
-  (`DB_NAME`, `DB_USER`, `DB_PASSWORD`), así no se repiten en otro archivo. Para
-  no escribirlo cada vez, copiar ese `.env` a la carpeta del compose (`.env`
-  está ignorado por git).
+- **`--env-file`**: el compose toma de ese `<servicio>.env` las credenciales de
+  su base (`DB_NAME`, `DB_USER`, `DB_PASSWORD`), así no se repiten en otro
+  archivo. Para no escribirlo cada vez, copiarlo a la carpeta del compose con el
+  nombre `.env` (Docker Compose lo lee solo; ignorado por git).
 - Para editar el front con recarga en caliente es más práctico `npm run dev` en
   `services/front-central` (puerto 3000) que su contenedor.
 

@@ -69,7 +69,7 @@ reenviarlo (`await request.body()`); un multipart de 100 MB ocupa 100 MB mientra
 4. `app/core/audit.py`: campos sensibles propios de sus bodies, si los tiene.
 5. `desarrollo/plataforma-completa/docker-compose.yml`: sus contenedores, su red exclusiva con la central
    (subred fija en su `TRUSTED_PROXIES`) y `<SERVICIO>_URL`.
-6. `.env.template` y esta tabla.
+6. `apigateway.env.example` y esta tabla.
 
 ### Logs y correlación
 
@@ -127,7 +127,7 @@ Caddy (`services/edge`) es la única entrada desde otros equipos: `/` (front),
 Por ahora en modo `http` (`http://<IP de la PC>/`); con dominio, `dns` (HTTPS). Rechaza solicitudes de más
 de 100 MB (413). La base no se publica a la red (`DB_BIND=127.0.0.1`).
 
-| Variable (`.env`) | Default | Para qué |
+| Variable (`apigateway.env`) | Default | Para qué |
 | --- | --- | --- |
 | `EDGE_BIND` | `127.0.0.1` | `0.0.0.0` para entrar desde otros equipos |
 | `SITE_ADDRESS` | `localhost` | nombre o IP con que se entra (debe coincidir con la URL) |
@@ -165,16 +165,16 @@ copiar el `access_token`, "Authorize" en http://localhost:8001/docs y llamar a
 | `GET /gateway/admin/history` | Historial de cambios de la central (`resource_type`: `service_state`, `ip_block`) |
 | `GET / POST /gateway/admin/ip-blocks`, `DELETE /gateway/admin/ip-blocks/{id}` | Lista negra: listar, bloquear IP o rango (con vencimiento opcional), desbloquear (baja lógica) |
 
-Si un bloqueo deja fuera a quien no debía: `IP_BLOCKS_ENABLED=false` en el `.env`
-y `restart apigateway` (`docker compose --env-file ../../services/apigateway/.env …` desde `desarrollo/plataforma-completa`). La API ya impide bloquear tu propia IP.
+Si un bloqueo deja fuera a quien no debía: `IP_BLOCKS_ENABLED=false` en `apigateway.env`
+y `up -d apigateway` (`docker compose --env-file ../../services/apigateway/apigateway.env …` desde `desarrollo/plataforma-completa`). La API ya impide bloquear tu propia IP.
 
 Los de auth siguen en `/auth/admin/logs`; se relacionan por `trace_id`.
 
 ## Configuración
 
-Un `.env` en esta carpeta sirve al Compose de desarrollo completo
-(`desarrollo/plataforma-completa`, con `--env-file`) y a la aplicación (ver
-`.env.template`). La base puede estar en Docker, en tu PC o en
+`apigateway.env` en esta carpeta sirve al Compose de desarrollo completo
+(`desarrollo/plataforma-completa`, con `--env-file`) y a la aplicación, en local
+y en Docker (`env_file`). Plantilla: `apigateway.env.example`. La base puede estar en Docker, en tu PC o en
 la nube: solo cambia `DB_HOST`/`DB_PORT` (desde un contenedor, `localhost` es
 el propio contenedor; usa `host.docker.internal` o `db`).
 
@@ -193,31 +193,31 @@ python -m uvicorn app.main:app --reload --port 8001 --no-proxy-headers
 ## Docker
 
 El Compose de desarrollo está en `desarrollo/plataforma-completa` (uno por
-servicio en `desarrollo/<servicio>`, producción en `produccion/`). Usa el `.env`
-de aquí (base, pgAdmin, puertos, binds) con `--env-file` y monta el `.env` y
-`secrets/` de auth y el `.env` de libro-mayor; los valores propios de
+servicio en `desarrollo/<servicio>`, producción en `produccion/`). Usa `apigateway.env`
+de aquí (base, pgAdmin, puertos, binds) con `--env-file`, pasa a cada servicio su
+`<servicio>.env` con `env_file` y monta `secrets/` de auth; los valores propios de
 Docker (DB_HOST=db, TRUSTED_PROXIES, AUTH_URL, LIBRO_MAYOR_URL) están en
 `environment` del Compose.
 
 libro-mayor en el Compose: `libro-mayor-migrate`, `libro-mayor` (API, sin
 puerto publicado) y `libro-mayor-worker` (sincronización programada y
-reclasificaciones; `restart: unless-stopped`). Su `.env` debe usar el mismo
+reclasificaciones; `restart: unless-stopped`). Su `libro-mayor.env` debe usar el mismo
 `DB_NAME`, `DB_USER` y `DB_PASSWORD` que la base del Compose. La red
 `sap-egress` les da salida hacia SAP HANA. Para publicarlo por la central:
-`LIBRO_MAYOR_ENABLED=true` en el `.env` de aquí y `restart apigateway`.
+`LIBRO_MAYOR_ENABLED=true` en `apigateway.env` y `up -d apigateway`.
 
 ```powershell
 cd ..\..\desarrollo\plataforma-completa
-docker compose --env-file ../../services/apigateway/.env up -d --build
-docker compose --env-file ../../services/apigateway/.env ps
-docker compose --env-file ../../services/apigateway/.env logs -f apigateway auth
+docker compose --env-file ../../services/apigateway/apigateway.env up -d --build
+docker compose --env-file ../../services/apigateway/apigateway.env ps
+docker compose --env-file ../../services/apigateway/apigateway.env logs -f apigateway auth
 ```
 
-Para no repetir `--env-file`, copiar `services/apigateway/.env` a
+Para no repetir `--env-file`, copiar `services/apigateway/apigateway.env` a
 `desarrollo/plataforma-completa/.env` (ignorado por git).
 
 - Detén antes los Uvicorn locales que usen el puerto 8001, o define
-  `GATEWAY_PORT=8002` en el `.env`.
+  `GATEWAY_PORT=8002` en `apigateway.env`.
 - Nombre de proyecto `proyecto-central`: reutiliza el contenedor y el volumen `db` existentes.
 - Migraciones automáticas en cada `up`: `auth-migrate` y `apigateway-migrate`
   (y `libro-mayor-migrate`) son contenedores de un solo uso con la misma imagen
@@ -228,7 +228,7 @@ Para no repetir `--env-file`, copiar `services/apigateway/.env` a
   `docker compose logs auth-migrate apigateway-migrate libro-mayor-migrate`.
 - Los seeds no son automáticos (acuerdo): tras una base nueva (`down -v`),
   habilitar `SEED_ENABLED`, ejecutar `POST /auth/seed` y volver a deshabilitarlo.
-- Versiones de imagen: `AUTH_IMAGE`, `APIGATEWAY_IMAGE` y `LIBRO_MAYOR_IMAGE` en `.env` (default `auth:0.1.0`, `apigateway:0.1.0`, `libro-mayor:0.1.0`).
+- Versiones de imagen: `AUTH_IMAGE`, `APIGATEWAY_IMAGE` y `LIBRO_MAYOR_IMAGE` en `apigateway.env` (default `auth:0.1.0`, `apigateway:0.1.0`, `libro-mayor:0.1.0`).
 - `docker compose down` detiene todo; los datos siguen en el volumen `db`.
   `docker compose down -v` borra también el volumen: la base queda vacía y la
   siguiente `up` la migra desde cero.

@@ -577,7 +577,7 @@ Pendiente de acordar antes de codificar:
 4. Idempotencia: identificar recursos por código estable; lo existente, aunque esté dado de baja, no se modifica ni se reactiva; no cambiar contraseñas; fallar si el email del admin pertenece a una cuenta pública existente.
 5. Datos de entrada: empresa, email del admin y su contraseña en el body (nunca fijos en código).
 
-Implementado: `app/seeds/data.py` declara `COMPANIES`, una lista donde cada empresa trae sus áreas, puestos, roles, relación puesto-rol y el puesto del admin (`admin_position_code`, o None). Para preconfigurar otra empresa se agrega a la lista y se vuelve a ejecutar POST /seed: solo se crea lo nuevo. El admin (email y contraseña en `.env`) recibe membresía y puesto en cada empresa con `admin_position_code`.
+Implementado: `app/seeds/data.py` declara `COMPANIES`, una lista donde cada empresa trae sus áreas, puestos, roles, relación puesto-rol y el puesto del admin (`admin_position_code`, o None). Para preconfigurar otra empresa se agrega a la lista y se vuelve a ejecutar POST /seed: solo se crea lo nuevo. El admin (email y contraseña en `auth.env`) recibe membresía y puesto en cada empresa con `admin_position_code`.
 
 Regla del admin existente: si el email ya existe con `created_by` NULL, es el admin del seed y se reutiliza sin cambiar su contraseña. Si tiene `created_by`, es una cuenta registrada públicamente y el seed responde 409 en lugar de promoverla.
 
@@ -595,7 +595,7 @@ Nunca una ruta pública que cree administradores solo porque todavía no hay uno
 | DB_NAME / DB_USER / DB_PASSWORD | Base y credenciales de conexión | Sin default | Obligatorias |
 | CORS_ORIGINS | Orígenes web permitidos (lista JSON) | [] | Cuando haya cliente web |
 
-SettingsConfigDict permite leer .env. extra="ignore" ignora ajustes adicionales antiguos; no los activa. Aún no hay configuración de JWT, sesiones ni límites.
+SettingsConfigDict permite leer el archivo de configuración (hoy auth.env). extra="ignore" ignora ajustes adicionales antiguos; no los activa. Aún no hay configuración de JWT, sesiones ni límites.
 
 ## Configuraciones retiradas: explicación para cuando hagan falta
 

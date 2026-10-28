@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """Lee configuración del entorno y del .env del servicio; no conecta a la BD."""
+    """Lee configuración del entorno y de pagos-proveedores.env (carpeta del servicio); no conecta a la BD."""
 
     PROJECT_NAME: str = "Pagos a proveedores"
     # Identificación en los logs (audit.logs.service / service_version).
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     DB_USER: str = Field(min_length=1)
     DB_PASSWORD: SecretStr = Field(min_length=1)  # Oculta la representación; no cifra.
 
-    # Lista JSON en .env con los orígenes web permitidos por CORS (ver main.py).
+    # Lista JSON en pagos-proveedores.env con los orígenes web permitidos por CORS (ver main.py).
     CORS_ORIGINS: list[str] = Field(default_factory=list)
 
     # Proxies propios (API central, balanceador): IPs exactas o rangos CIDR
@@ -81,9 +81,9 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_URL va sin la ruta /auth (p. ej. http://127.0.0.1:8001)")
         return url
 
-    # Las variables del proceso tienen prioridad sobre .env.
+    # Las variables del proceso tienen prioridad sobre pagos-proveedores.env (en Docker llegan con env_file).
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=BASE_DIR / "pagos-proveedores.env",
         env_file_encoding="utf-8",
         extra="ignore",
         # Una variable vacía (PROJECT_NAME=) se trata como no definida y usa su default.

@@ -54,7 +54,7 @@ de un SKU; cargas masivas con vista previa; historial de cambios.
 - Ofisis (SQL Server externo, EcommDB): `app/external/ofisis.py`. Sin pool
   (NullPool), lecturas en AUTOCOMMIT, escrituras en transacciones cortas por lote,
   `SET LOCK_TIMEOUT` y timeouts de login y consulta, para no dejar conexiones
-  abiertas ni retener bloqueos. Variables `OFISIS_*` en `.env.example`.
+  abiertas ni retener bloqueos. Variables `OFISIS_*` en `canales-venta.env.example`.
 - ICG (SQL Server externo, nombres de artículos): pendiente.
 
 `/ready` solo comprueba la base propia: no consulta Ofisis ni ICG, para que los

@@ -31,7 +31,7 @@ Desde `services/pagos-proveedores`, con Python 3.14:
 py -3.14 -m venv enviroment
 .\enviroment\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env   # DB_*, AUTH_URL, NOTIFICACIONES_URL (ver comentarios)
+copy pagos-proveedores.env.example pagos-proveedores.env   # DB_*, AUTH_URL, NOTIFICACIONES_URL (ver comentarios)
 alembic upgrade head
 python -m uvicorn app.main:app --port 8012
 ```

@@ -3,16 +3,19 @@
 # (API y worker), la API central, el front (front-central) y el
 # proxy de borde con HTTPS (caddy).
 #
-#   docker compose --env-file ../../services/apigateway/.env up -d --build
-#   (desde desarrollo/plataforma-completa; o copiar ese .env aquí como .env y omitir --env-file)
+#   docker compose --env-file ../../services/apigateway/apigateway.env up -d --build
+#   (desde desarrollo/plataforma-completa; o copiar ese archivo aquí como .env y omitir --env-file)
 #
 # Cada imagen se construye una vez, en su contenedor de migración (*-migrate);
 # la app y el worker la reutilizan (pull_policy: never).
 #
-# Variables del compose (DB_*, PGADMIN_*, puertos, binds e imágenes): el .env de la
-# central (services/apigateway/.env), pasado con --env-file.
-# Cada aplicación lee además su propio .env, montado de solo lectura; los
+# Variables del compose (DB_*, PGADMIN_*, puertos, binds e imágenes): el archivo de la
+# central (services/apigateway/apigateway.env), pasado con --env-file.
+# Cada aplicación recibe además su propio services/<servicio>/<servicio>.env con
+# env_file, igual que en producción (decisión del usuario, 2026-10-28); los
 # valores de "environment" tienen prioridad y ajustan lo que cambia dentro de Docker.
+# Un cambio en esos archivos se aplica con "up -d" (recrea el contenedor), no con
+# "restart". Compose interpreta "$" en sus valores: escribir "$$".
 #
 # Redes:
 #   edge       redes con puertos publicados: caddy (80/443/8443), la central (desarrollo)
@@ -96,8 +99,7 @@ services:
       context: ../..
       dockerfile: services/auth/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/auth/.env:/app/services/auth/.env:ro
+    env_file: ../../services/auth/auth.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -113,12 +115,17 @@ services:
       context: ../..
       dockerfile: services/apigateway/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/apigateway/.env:/app/services/apigateway/.env:ro
+    env_file: ../../services/apigateway/apigateway.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
-      AUTH_URL: http://auth.internal:8000   # Solo porque la configuración lo exige; no se usa al migrar.
+      # Solo porque la configuración lo exige (con *_ENABLED=true pide la URL); no se usan al migrar.
+      AUTH_URL: http://auth.internal:8000
+      LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
+      NOTIFICACIONES_URL: http://notificaciones.internal:8000
+      PAGOS_PROVEEDORES_URL: http://pagos-proveedores.internal:8000
+      CANALES_VENTA_URL: http://canales-venta.internal:8000
+      SAP_OPERACIONES_URL: http://sap-operaciones.internal:8000
     networks: [data]
     restart: "no"
     depends_on:
@@ -132,8 +139,7 @@ services:
       context: ../..
       dockerfile: services/libro-mayor/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
+    env_file: ../../services/libro-mayor/libro-mayor.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -151,8 +157,7 @@ services:
       context: ../..
       dockerfile: services/notificaciones/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+    env_file: ../../services/notificaciones/notificaciones.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -170,8 +175,7 @@ services:
       context: ../..
       dockerfile: services/pagos-proveedores/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/pagos-proveedores/.env:/app/services/pagos-proveedores/.env:ro
+    env_file: ../../services/pagos-proveedores/pagos-proveedores.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -191,8 +195,7 @@ services:
       context: ../..
       dockerfile: services/canales-venta/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/canales-venta/.env:/app/services/canales-venta/.env:ro
+    env_file: ../../services/canales-venta/canales-venta.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -210,8 +213,7 @@ services:
       context: ../..
       dockerfile: services/sap-operaciones/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/sap-operaciones/.env:/app/services/sap-operaciones/.env:ro
+    env_file: ../../services/sap-operaciones/sap-operaciones.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -224,19 +226,19 @@ services:
         condition: service_completed_successfully
 
   auth:
-    # Versión fija de la imagen; cambiarla aquí (o con AUTH_IMAGE en .env).
+    # Versión fija de la imagen; cambiarla aquí (o con AUTH_IMAGE en apigateway.env).
     image: ${AUTH_IMAGE:-auth:0.1.0}
     # La construye auth-migrate (una sola vez): construirla aquí también en paralelo
     # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
     pull_policy: never
     # Sin "ports": solo la central llega a auth.
+    env_file: ../../services/auth/auth.env
     volumes:
-      - ../../services/auth/.env:/app/services/auth/.env:ro
       - ../../services/auth/secrets:/app/services/auth/secrets:ro
     environment:
       DB_HOST: db
       DB_PORT: "5432"                     # puerto interno de PostgreSQL, no el publicado
-      # Rutas absolutas dentro del contenedor (las del .env son relativas).
+      # Rutas absolutas dentro del contenedor (las de auth.env son relativas).
       JWT_PRIVATE_KEY_FILE: /app/services/auth/secrets/jwt_private.pem
       JWT_PUBLIC_KEY_FILE: /app/services/auth/secrets/jwt_public.pem
       # Solo se confía en X-Forwarded-For / X-Trace-Id si llegan por auth-net.
@@ -260,8 +262,7 @@ services:
     # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
     pull_policy: never
     # Sin "ports": solo la central llega a libro-mayor.
-    volumes:
-      - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
+    env_file: ../../services/libro-mayor/libro-mayor.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -291,8 +292,7 @@ services:
     # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
     pull_policy: never
     command: ["python", "-m", "app.worker"]
-    volumes:
-      - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
+    env_file: ../../services/libro-mayor/libro-mayor.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -313,8 +313,7 @@ services:
     image: ${NOTIFICACIONES_IMAGE:-notificaciones:0.1.0}
     # La construye notificaciones-migrate (una sola vez). never = usar la local.
     pull_policy: never
-    volumes:
-      - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+    env_file: ../../services/notificaciones/notificaciones.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -343,8 +342,7 @@ services:
     image: ${NOTIFICACIONES_IMAGE:-notificaciones:0.1.0}
     pull_policy: never
     command: ["python", "-m", "app.worker"]
-    volumes:
-      - ../../services/notificaciones/.env:/app/services/notificaciones/.env:ro
+    env_file: ../../services/notificaciones/notificaciones.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -368,8 +366,7 @@ services:
     image: ${PAGOS_PROVEEDORES_IMAGE:-pagos-proveedores:0.1.0}
     # La construye pagos-proveedores-migrate (una sola vez). never = usar la local.
     pull_policy: never
-    volumes:
-      - ../../services/pagos-proveedores/.env:/app/services/pagos-proveedores/.env:ro
+    env_file: ../../services/pagos-proveedores/pagos-proveedores.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -402,8 +399,7 @@ services:
     image: ${CANALES_VENTA_IMAGE:-canales-venta:0.1.0}
     # La construye canales-venta-migrate (una sola vez). never = usar la local.
     pull_policy: never
-    volumes:
-      - ../../services/canales-venta/.env:/app/services/canales-venta/.env:ro
+    env_file: ../../services/canales-venta/canales-venta.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -432,8 +428,7 @@ services:
     image: ${SAP_OPERACIONES_IMAGE:-sap-operaciones:0.1.0}
     # La construye sap-operaciones-migrate (una sola vez). never = usar la local.
     pull_policy: never
-    volumes:
-      - ../../services/sap-operaciones/.env:/app/services/sap-operaciones/.env:ro
+    env_file: ../../services/sap-operaciones/sap-operaciones.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -462,8 +457,7 @@ services:
     image: ${SAP_OPERACIONES_IMAGE:-sap-operaciones:0.1.0}
     pull_policy: never
     command: ["python", "-m", "app.worker"]
-    volumes:
-      - ../../services/sap-operaciones/.env:/app/services/sap-operaciones/.env:ro
+    env_file: ../../services/sap-operaciones/sap-operaciones.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -486,25 +480,24 @@ services:
     # La construye apigateway-migrate (una sola vez): construirla aquí también en paralelo
     # choca con la misma etiqueta. never = usar la local, no buscarla en Docker Hub.
     pull_policy: never
-    # Solo accesible desde esta máquina. GATEWAY_PORT en .env si 8001 está ocupado.
+    # Solo accesible desde esta máquina. GATEWAY_PORT en apigateway.env si 8001 está ocupado.
     # Acceso directo para desarrollo (npm run dev). Desde la red se entra por caddy.
     ports:
       - "${GATEWAY_BIND:-127.0.0.1}:${GATEWAY_PORT:-8001}:8000"
-    volumes:
-      - ../../services/apigateway/.env:/app/services/apigateway/.env:ro
+    env_file: ../../services/apigateway/apigateway.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
       AUTH_URL: http://auth.internal:8000
-      # Publicar libro-mayor: LIBRO_MAYOR_ENABLED=true en el .env de la central.
+      # Publicar libro-mayor: LIBRO_MAYOR_ENABLED=true en apigateway.env.
       LIBRO_MAYOR_URL: http://libro-mayor.internal:8000
-      # Publicar notificaciones: NOTIFICACIONES_ENABLED=true en el .env de la central.
+      # Publicar notificaciones: NOTIFICACIONES_ENABLED=true en apigateway.env.
       NOTIFICACIONES_URL: http://notificaciones.internal:8000
-      # Publicar pagos-proveedores: PAGOS_PROVEEDORES_ENABLED=true en el .env de la central.
+      # Publicar pagos-proveedores: PAGOS_PROVEEDORES_ENABLED=true en apigateway.env.
       PAGOS_PROVEEDORES_URL: http://pagos-proveedores.internal:8000
-      # Publicar canales-venta: CANALES_VENTA_ENABLED=true en el .env de la central.
+      # Publicar canales-venta: CANALES_VENTA_ENABLED=true en apigateway.env.
       CANALES_VENTA_URL: http://canales-venta.internal:8000
-      # Publicar sap-operaciones: SAP_OPERACIONES_ENABLED=true en el .env de la central.
+      # Publicar sap-operaciones: SAP_OPERACIONES_ENABLED=true en apigateway.env.
       SAP_OPERACIONES_URL: http://sap-operaciones.internal:8000
       # Solo caddy (proxy-net) puede informar la IP real del cliente.
       TRUSTED_PROXIES: '["172.32.0.0/24"]'
@@ -559,7 +552,7 @@ services:
       context: ../../services/edge
     # Modo: http (red local sin dominio, nada que instalar; default), internal (CA
     # propia, solo esta máquina) o dns (dominio propio + Let's Encrypt; requiere
-    # services/edge/.env). Ver services/edge/README.md.
+    # services/edge/edge.env). Ver services/edge/README.md.
     command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.${CADDY_TLS:-http}", "--adapter", "caddyfile"]
     ports:
       - "${EDGE_BIND:-127.0.0.1}:${EDGE_HTTP_PORT:-80}:80"
@@ -569,7 +562,7 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
     # ACME_EMAIL y CLOUDFLARE_API_TOKEN (solo modo dns). Opcional en modo internal.
     env_file:
-      - path: ../../services/edge/.env
+      - path: ../../services/edge/edge.env
         required: false
     volumes:
       - caddy_data:/data       # certificados y la CA interna (no borrar)

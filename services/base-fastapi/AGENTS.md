@@ -9,14 +9,14 @@ no es un servicio desplegable: es el punto de partida para copiar uno nuevo.
 - `app/core/db/connection.py`: engine y sesiones SQLAlchemy (PostgreSQL; SQL Server por validar).
 - `app/core/audit.py` + `AuditMiddleware` en `main.py`: logs en el schema `audit` (packages/platform-audit).
 - `GET /<prefijo>/health` (proceso vivo) y `GET /<prefijo>/ready` (la base responde; 503 si no).
-- `Dockerfile` (build desde la raíz del repo), `requirements.txt`, `.env.example`, `scripts/migrate_audit.py`.
+- `Dockerfile` (build desde la raíz del repo), `requirements.txt`, `servicio.env.example`, `scripts/migrate_audit.py`.
 
 ## Crear un servicio nuevo
 
-1. Copiar `services/base` a `services/<servicio>` (sin `.env`, `enviroment/`, `__pycache__/`).
+1. Copiar `services/base` a `services/<servicio>` (sin `*.env`, `enviroment/`, `__pycache__/`).
 2. Reemplazar "base" por el nombre: `PREFIX` en `main.py`, defaults de `config.py`,
-   rutas/tag/HEALTHCHECK del `Dockerfile` y `SERVICE_NAME` del `.env.example`.
-3. Crear el `.env` propio del servicio a partir de `.env.example`.
+   rutas/tag/HEALTHCHECK del `Dockerfile` y `SERVICE_NAME` de `servicio.env.example`, renombrado a `<servicio>.env.example`.
+3. Crear `<servicio>.env` (el nombre de la carpeta; lo lee `config.py`) a partir de `<servicio>.env.example`.
 4. Si tiene tablas: schema propio en `Base.metadata`, Alembic limitado a ese schema
    y `COPY` de `migrations/` y `alembic.ini` en el Dockerfile.
 

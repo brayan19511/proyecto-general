@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """Lee configuración del entorno y de services/auth/.env; no conecta a la BD."""
+    """Lee configuración del entorno y de auth.env (carpeta del servicio); no conecta a la BD."""
 
     PROJECT_NAME: str = "Auth"
     # Identificación en los logs (audit.logs.service / service_version).
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     DB_USER: str = Field(min_length=1)
     DB_PASSWORD: SecretStr = Field(min_length=1)  # Oculta la representación; no cifra.
 
-    # Lista JSON en .env con los orígenes web permitidos por CORS (ver main.py).
+    # Lista JSON en auth.env con los orígenes web permitidos por CORS (ver main.py).
     CORS_ORIGINS: list[str] = Field(default_factory=list)
 
     # JWT (RS256). La clave privada firma y solo la tiene auth; la pública
@@ -98,9 +98,9 @@ class Settings(BaseSettings):
                 raise ValueError(f"Con SEED_ENABLED=true faltan: {', '.join(missing)}")
         return self
 
-    # Las variables del proceso tienen prioridad sobre .env.
+    # Las variables del proceso tienen prioridad sobre auth.env (en Docker llegan con env_file).
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=BASE_DIR / "auth.env",
         env_file_encoding="utf-8",
         extra="ignore",
         # Una variable vacía (SEED_TOKEN=) se trata como no definida y usa su default.

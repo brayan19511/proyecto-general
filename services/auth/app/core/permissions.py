@@ -62,4 +62,7 @@ PERMISSIONS: dict[str, list[str]] = {
     # reanuda, y administra la lista de bases SAP.
     "sap_operations.view": ["company"],
     "sap_operations.execute": ["company"],
+    # sap-operaciones, documentos: buscar documentos SAP y descargar sus anexos.
+    # Independiente de sap_operations.* (lo aplica sap-operaciones).
+    "sap_documents.view": ["company"],
 }

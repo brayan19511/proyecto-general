@@ -2,7 +2,7 @@
 # services/libro-mayor. Necesita un auth corriendo para validar tokens: por
 # defecto el de desarrollo/auth (http://host.docker.internal:8000).
 #
-#   docker compose --env-file ../../services/libro-mayor/.env up -d --build   (desde desarrollo/libro-mayor)
+#   docker compose --env-file ../../services/libro-mayor/libro-mayor.env up -d --build   (desde desarrollo/libro-mayor)
 #
 # Para probar con usuarios reales, el token debe emitirlo ese mismo auth.
 
@@ -10,8 +10,7 @@ name: dev-libro-mayor
 
 x-libro-mayor: &libro-mayor
   image: libro-mayor:dev
-  volumes:
-    - ../../services/libro-mayor/.env:/app/services/libro-mayor/.env:ro
+  env_file: ../../services/libro-mayor/libro-mayor.env
   environment:
     DB_HOST: db
     DB_PORT: "5432"

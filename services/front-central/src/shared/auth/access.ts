@@ -38,6 +38,8 @@ export const LASTMILLER_IMPORT = ['lastmiller.import'] // cargas masivas
 // SAP › operaciones masivas: execute incluye view (lo aplica sap-operaciones).
 export const SAP_VIEW = ['sap_operations.view', 'sap_operations.execute']
 export const SAP_EXECUTE = ['sap_operations.execute'] // crear, ejecutar, cancelar, reanudar; bases SAP
+// SAP › documentos y anexos: independiente de los anteriores.
+export const SAP_DOCUMENTS = ['sap_documents.view'] // buscar documentos y descargar anexos
 
 export function canAccess(
   rule: AccessRule,

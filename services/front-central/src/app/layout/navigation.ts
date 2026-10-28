@@ -5,6 +5,7 @@ import {
   LEDGER_VIEW,
   NOTIFICATIONS_VIEW,
   PAYMENTS_VIEW,
+  SAP_DOCUMENTS,
   SAP_VIEW,
   type AccessRule,
 } from '../../shared/auth/access'
@@ -59,6 +60,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'SAP',
     items: [
       { label: 'Operaciones masivas', path: '/sap/trabajos', icon: 'cpu', access: { anyOf: SAP_VIEW } },
+      { label: 'Documentos', path: '/sap/documentos', icon: 'paperclip', access: { anyOf: SAP_DOCUMENTS } },
+      { label: 'Descargas', path: '/sap/descargas', icon: 'cloud-download', access: { anyOf: SAP_DOCUMENTS } },
       { label: 'Configuración SAP', path: '/sap/configuracion', icon: 'gear', access: { anyOf: SAP_VIEW } },
     ],
   },

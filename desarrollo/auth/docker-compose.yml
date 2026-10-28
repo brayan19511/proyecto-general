@@ -1,9 +1,9 @@
 # Desarrollo de auth solo: su base y el servicio, construidos desde services/auth.
 #
-#   docker compose --env-file ../../services/auth/.env up -d --build   (desde desarrollo/auth)
+#   docker compose --env-file ../../services/auth/auth.env up -d --build   (desde desarrollo/auth)
 #
-# --env-file: DB_NAME, DB_USER y DB_PASSWORD de services/auth/.env crean la base
-# de este proyecto; la app lee además ese mismo .env (montado de solo lectura).
+# --env-file: DB_NAME, DB_USER y DB_PASSWORD de services/auth/auth.env crean la base
+# de este proyecto; la app recibe además ese mismo archivo con env_file.
 # Proyecto propio (dev-auth): sus contenedores y su volumen no se mezclan con
 # desarrollo/plataforma-completa. Puertos distintos para poder tener ambos.
 
@@ -35,8 +35,7 @@ services:
       context: ../..                       # raíz del repo: incluye packages/platform-audit
       dockerfile: services/auth/Dockerfile
     command: ["sh", "-c", "python -m alembic upgrade head && python scripts/migrate_audit.py"]
-    volumes:
-      - ../../services/auth/.env:/app/services/auth/.env:ro
+    env_file: ../../services/auth/auth.env
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -52,8 +51,8 @@ services:
     # http://host.docker.internal:8000 (ver desarrollo/libro-mayor).
     ports:
       - "127.0.0.1:${DEV_AUTH_PORT:-8000}:8000"
+    env_file: ../../services/auth/auth.env
     volumes:
-      - ../../services/auth/.env:/app/services/auth/.env:ro
       - ../../services/auth/secrets:/app/services/auth/secrets:ro   # llaves JWT
     environment:
       DB_HOST: db

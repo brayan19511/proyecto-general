@@ -34,7 +34,7 @@ Desde `services/notificaciones`, con Python 3.14 (uuid7, igual que el Dockerfile
 py -3.14 -m venv enviroment
 .\enviroment\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env   # DB_*, AUTH_URL, SMTP_ENCRYPTION_KEYS (ver comentarios)
+copy notificaciones.env.example notificaciones.env   # DB_*, AUTH_URL, SMTP_ENCRYPTION_KEYS (ver comentarios)
 alembic upgrade head
 python -m uvicorn app.main:app --port 8010
 python -m app.worker          # en otra terminal; --once procesa y termina

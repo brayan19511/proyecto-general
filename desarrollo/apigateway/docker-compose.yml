@@ -4,7 +4,7 @@
 # vía host.docker.internal). Notificaciones y pagos-proveedores solo reciben si
 # NOTIFICACIONES_ENABLED / PAGOS_PROVEEDORES_ENABLED están en true.
 #
-#   docker compose --env-file ../../services/apigateway/.env up -d --build   (desde desarrollo/apigateway)
+#   docker compose --env-file ../../services/apigateway/apigateway.env up -d --build   (desde desarrollo/apigateway)
 #
 # Puerto 8011 para no chocar con la central de plataforma-completa (8001).
 # Con un front de desarrollo, agregar su origen a CORS_ORIGINS de la central.
@@ -13,8 +13,7 @@ name: dev-apigateway
 
 x-apigateway: &apigateway
   image: apigateway:dev
-  volumes:
-    - ../../services/apigateway/.env:/app/services/apigateway/.env:ro
+  env_file: ../../services/apigateway/apigateway.env
   environment:
     DB_HOST: db
     DB_PORT: "5432"

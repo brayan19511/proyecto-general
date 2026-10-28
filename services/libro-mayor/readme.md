@@ -27,7 +27,7 @@ Desde `services/libro-mayor`, con un entorno virtual propio:
 ```powershell
 py -3.14 -m venv enviroment   # Python 3.14, igual que el Dockerfile (uuid7)
 .\enviroment\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env   # completar DB_NAME, DB_USER, DB_PASSWORD y AUTH_URL
+copy libro-mayor.env.example libro-mayor.env   # completar DB_NAME, DB_USER, DB_PASSWORD y AUTH_URL
 .\enviroment\Scripts\python.exe -m alembic upgrade head
 .\enviroment\Scripts\python.exe scripts/migrate_audit.py
 .\enviroment\Scripts\python.exe -m uvicorn app.main:app --reload --port 8003
@@ -428,7 +428,7 @@ Schema `libro_mayor`, declarado una vez en `app/models/entities.py`. Alembic
 crea el schema si no existe, guarda su versión en
 `libro_mayor.alembic_version`, solo compara este schema y sus tablas, y tiene
 `downgrade` deshabilitado (un error se corrige con otra migración).
-`alembic.ini` no tiene URL: usa el `.env`.
+`alembic.ini` no tiene URL: usa `libro-mayor.env`.
 
 | Revisión | Contenido |
 | --- | --- |
